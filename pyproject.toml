@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools >= 61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "montmark"
+version = "0.0.1"
+authors = [
+  { name="Martin D.", email="desgeeko@gmail.com" }
+]
+description = "Markdown pet project"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.urls]
+Homepage = "https://github.com/desgeeko/montmark"
+Issues = "http s://github.com/desgeeko/montmark/issues"
