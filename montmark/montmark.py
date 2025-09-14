@@ -319,6 +319,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     tok, seq, w = i, '', 0
     tok2, seq2, w2 = i, '', 0
     phase = ''
+    if stack[-1][0] == 'fenced':
+        return i
     hr, eol = check_hr(md, i)
     if hr:
         stack.append(('hr', [], i))
@@ -583,7 +585,7 @@ def transform(md: str, start: int = 0) -> str:
             #eol = md.find('\n', i)
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, refs)
-            dprint(f'=> {i:2} |')
+            #dprint(f'=> {i:2} |')
 
         i = eol+1
             
