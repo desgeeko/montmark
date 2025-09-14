@@ -273,6 +273,10 @@ def context(md: str, start: int, stop: int, stack) -> int:
             else:
                 i = i0
                 broken = True
+            #if md[i] in '\r\n':
+            #    broken = True
+            #else:
+            #    node_cursor += 2
         elif node == 'fenced':
             if seq2 == '`' and w2 == 3:
                 broken = True
@@ -462,7 +466,10 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
         stack[-1][1].append('\n')
         return stop+1
     
-    matches = regex.finditer(md, start, stop)
+    if stack[-1][0] == 'fenced':
+        matches = []
+    else:
+        matches = regex.finditer(md, start, stop)
 
     for match in matches:
         i = match.start()
@@ -470,9 +477,9 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
             stack[-1][1].append(md[tok:i-1])
             tok = i
             continue
-        if stack[-1][0] == 'fenced':
-            break
-        elif stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
+        #if stack[-1][0] == 'fenced':
+        #    break
+        if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
             tok -= 2
         elif stl and i > 0 and md[i-1:i+1] in ['**','__'] and md[i+1] != md[i] and stack[-1][0] in ('strong', 'em'):
@@ -549,6 +556,7 @@ def transform(md: str, start: int = 0) -> str:
     links = {}
     while i < len(md):
         eol = md.find("\n", i)
+        eol = len(md) if eol == -1 else eol
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])}')
         
         phase = "in_context"
@@ -572,13 +580,14 @@ def transform(md: str, start: int = 0) -> str:
 
         if phase == "in_payload":
             dprint(f'{i:2} | _p | {" ":25} ', end="")
-            eol = md.find('\n', i)
+            #eol = md.find('\n', i)
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, refs)
             dprint(f'=> {i:2} |')
 
         i = eol+1
             
+    _ = context('\n', 0, 0, stack)
     all_fragments = stack[0][1]
     dprint('fragments', all_fragments, '\n')
     dprint('refs', refs)
