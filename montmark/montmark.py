@@ -168,13 +168,15 @@ def prefix(md: str, start: int) -> tuple:
     i = start
     tok, seq, w = i, '', 0
     while i < len(md):
-        if not seq and md[i] in '#':
-            seq = '#'
+        if not seq and md[i] in '#`':
+            seq = md[i]
         elif not seq and md[i] in '1234567890':
             seq = 'digits'
         if seq == 'digits' and md[i] in '1234567890':
             w += 1
         elif seq == '#' and md[i] == '#':
+            w += 1
+        elif seq == '`' and md[i] == '`':
             w += 1
         else:
             return tok, i, seq, w
@@ -188,6 +190,9 @@ def html_text(element: str, content):
     if element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
         content.append(f'</code></pre>\n')
+    elif element in ['em&strong']:
+        content.insert(0, f'<{element}>{isList}')
+        content.append(f'</{element}>{isBlock}')
     elif element in ['a', 'img']:
         title = f' title="{content["title"]}"' if 'title' in content else ''
         obj = content[0]["obj"]
@@ -210,7 +215,7 @@ def html_text(element: str, content):
     return content
 
         
-def context(md: str, start: int, stack) -> int:
+def context(md: str, start: int, stop: int, stack) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -268,6 +273,13 @@ def context(md: str, start: int, stack) -> int:
             else:
                 i = i0
                 broken = True
+        elif node == 'fenced':
+            if seq2 == '`' and w2 == 3:
+                broken = True
+                i = stop
+            else:
+                i = i0
+                node_cursor += 1
         elif node[0] == 'h' and len(node) == 2:
             broken = True
             i = start
@@ -297,7 +309,7 @@ def context(md: str, start: int, stack) -> int:
     return i
 
 
-def structure(md: str, start: int, stack) -> list:
+def structure(md: str, start: int, stop: int, stack) -> list:
     """Build new blocks."""
     i = start
     tok, seq, w = i, '', 0
@@ -309,11 +321,20 @@ def structure(md: str, start: int, stack) -> list:
         return eol
     while i < len(md):
         node, accu, _ = stack[-1]
-        
+
+        i0 = i
         tok, i, seq, w = indentation(md, i)
         tok2, i, seq2, w2 = prefix(md, i)
 
-        if md[i] in '\r\n':
+        if seq2  == '`' and w2 == 3:
+            stack.append(('fenced', [], i))
+            tok, seq, w = i+1, '', 0
+            i = stop
+            return i
+        elif md[i] in '\r\n':
+            return i
+        elif stack[-1][0] == 'fenced':
+            i = i0
             return i
         elif seq == ' ' and w >= 4:
             stack.append(('indented', [], i))
@@ -449,16 +470,28 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
             stack[-1][1].append(md[tok:i-1])
             tok = i
             continue
-        if stl and i > 0 and md[i-1:i+1] in ['**','__'] and stack[-1][0] == 'strong':
+        if stack[-1][0] == 'fenced':
+            break
+        elif stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
+            tok = close_element(md, tok, i, stack, 3)
+            tok -= 2
+        elif stl and i > 0 and md[i-1:i+1] in ['**','__'] and md[i+1] != md[i] and stack[-1][0] in ('strong', 'em'):
             tok = close_element(md, tok, i, stack, 2)
-        elif stl and md[i:i+1] in ['*', '_'] and stack[-1][0] == 'em':
+            tok -= 1
+        elif stl and md[i] in ['*', '_'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong'):
+            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
+                stack[-2] = 'strong', stack[-2][1], stack[-2][2]
+                stack[-1] = 'em', stack[-1][1], stack[-1][2]
             tok = close_element(md, tok, i, stack, 1)
         elif md[i:i+1] == '`' and stack[-1][0] == 'code':
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif stl and i > 0 and md[i-1:i+1] in ['**', '__']:
+        elif stl and i > 1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
+            tok = open_element(md, tok, i, stack, 3, 'em')
+            tok = open_element(md, tok, i, stack, 3, 'strong')
+        elif stl and i > 0 and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 2, 'strong')
-        elif stl and md[i:i+1] in ['*', '_'] and md[i+1:i+2] != md[i:i+1]:
+        elif stl and md[i] in ['*', '_'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 1, 'em')
         elif md[i:i+1] == '`':
             tok = open_element(md, tok, i, stack, 1, 'code')
@@ -469,7 +502,6 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
         elif md[i:i+1] == '<':
             tok = open_element(md, tok, i-1, stack, 0, 'span')
         elif stack[-1][0] == 'html':
-            stack[-1][1].append(md[tok:stop])
             break
         elif md[i:i+1] == '[' and not skip:
             if i > 0 and md[i-1] == '!':
@@ -497,7 +529,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
     else:
         stack[-1][1].append(md[tok:stop])
     for el, _, _ in stack:
-        if el in ['p']:
+        if el in ['p', 'fenced']:
             stack[-1][1].append('\n')
     return stop+1
 
@@ -523,7 +555,7 @@ def transform(md: str, start: int = 0) -> str:
 
         if phase == "in_context":
             dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[1:]]):25} ', end="")
-            i = context(md, i, stack)
+            i = context(md, i, eol, stack)
             dprint(f'=> {i:2} | {".".join([x[0] for x in stack[1:]])}')
             phase = "in_structure" if i < eol else "fforward"
 
@@ -534,7 +566,7 @@ def transform(md: str, start: int = 0) -> str:
                 links[link_id.upper()] = (url, title)
                 i = eol
                 continue
-            i = structure(md, i, stack)
+            i = structure(md, i, eol, stack)
             dprint(f'=> {i:2} | {".".join([x[0] for x in stack[1:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
