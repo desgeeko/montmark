@@ -20,4 +20,4 @@ license-files = ["LICENSE"]
 
 [project.urls]
 Homepage = "https://github.com/desgeeko/montmark"
-Issues = "http s://github.com/desgeeko/montmark/issues"
+Issues = "https://github.com/desgeeko/montmark/issues"
