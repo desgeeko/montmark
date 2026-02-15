@@ -1,7 +1,7 @@
 """
 MIT License
 
-Copyright (c) 2025 Martin D. <desgeeko@gmail.com>
+Copyright (c) 2025-2026 Martin D. <desgeeko@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -562,30 +562,27 @@ def transform(md: str, start: int = 0) -> str:
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])}')
         
         phase = "in_context"
-
-        if phase == "in_context":
-            dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[1:]]):25} ', end="")
-            i = context(md, i, eol, stack)
-            dprint(f'=> {i:2} | {".".join([x[0] for x in stack[1:]])}')
-            phase = "in_structure" if i < eol else "fforward"
+        dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ', end="")
+        i = context(md, i, eol, stack)
+        dprint(f'=> {i:2} | {".".join([x[0] for x in stack[0:]])}')
+        phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
-            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[1:]]):25} ', end="")
+            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ', end="")
             link_id, url, title, _ = check_link_id(md, i)
             if link_id:
                 links[link_id.upper()] = (url, title)
                 i = eol
                 continue
             i = structure(md, i, eol, stack)
-            dprint(f'=> {i:2} | {".".join([x[0] for x in stack[1:]])}')
+            dprint(f'=> {i:2} | {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
             dprint(f'{i:2} | _p | {" ":25} ', end="")
-            #eol = md.find('\n', i)
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, refs)
-            #dprint(f'=> {i:2} |')
+            dprint(f'=> {r:2} |')
 
         i = eol+1
             
