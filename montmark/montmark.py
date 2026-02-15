@@ -148,25 +148,25 @@ def check_hr(md: str, start = 0):
     return res, eol
 
 
-def indentation(md: str, start: int) -> tuple:
-    """Find & expand spaces and tabs at start."""
+def indentation(md: str, start: int = 0) -> tuple:
+    """Find & expand spaces and tabs."""
     i = start
-    tok, seq, w = i, '', 0
+    found, w = False, 0
     while i < len(md):
-        seq = md[i] if not seq and md[i] in ' \t' else seq
-        if md[i] == ' ' and md[i] == seq:
+        found = True if not found and md[i] in ' \t' else found
+        if md[i] == ' ':
             w += 1
-        elif md[i] == '\t' and md[i] == seq:
+        elif md[i] == '\t':
             w += 4
         else:
-            return tok, i, seq, w
+            return start, i, found, w
         i += 1
 
 
-def prefix(md: str, start: int) -> tuple:
+def prefix(md: str, start: int = 0) -> tuple:
     """Isolate digits at start."""
     i = start
-    tok, seq, w = i, '', 0
+    seq, w = '', 0
     while i < len(md):
         if not seq and md[i] in '#`':
             seq = md[i]
@@ -179,7 +179,7 @@ def prefix(md: str, start: int) -> tuple:
         elif seq == '`' and md[i] == '`':
             w += 1
         else:
-            return tok, i, seq, w
+            return start, i, seq, w
         i += 1
 
 
@@ -219,7 +219,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
-    tok, seq, w = i, '', 0
+    tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
     if len(stack) == 1:
         return i
@@ -239,11 +239,11 @@ def context(md: str, start: int, stop: int, stack) -> int:
         node = stack[node_cursor][0]
 
         i0 = i
-        tok, i, seq, w = indentation(md, i)
+        tok, i, sp_or_tabs, w = indentation(md, i)
         tok2, i, seq2, w2 = prefix(md, i)
         
         if node in ['p']:
-            if md[i] in '\r\n' or seq2 == '#' or (seq  == ' ' and md[i] != ' ' and i-tok >= 4):
+            if md[i] in '\r\n' or seq2 == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             else:
@@ -251,7 +251,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
         elif node in ['ul', 'ol', 'li']:
             if md[i] in '\r\n':
                 broken = True
-            elif seq  == ' ' and w >= 4 and (md[i] in '+-*' or (seq2 == 'digits' and md[i] == '.')):
+            elif sp_or_tabs and w >= 4 and (md[i] in '+-*' or (seq2 == 'digits' and md[i] == '.')):
                 nested = (i-tok) // 4
                 current = sum([1 for x in stack if x[0] in['ul', 'ol', 'li']]) // 2
                 if nested >= current:
@@ -316,8 +316,8 @@ def context(md: str, start: int, stop: int, stack) -> int:
 def structure(md: str, start: int, stop: int, stack) -> list:
     """Build new blocks."""
     i = start
-    tok, seq, w = i, '', 0
-    tok2, seq2, w2 = i, '', 0
+    sp_or_tabs, w1 = False, 0
+    seq2, w2 = '', 0
     phase = ''
     if stack[-1][0] == 'fenced':
         return i
@@ -329,12 +329,11 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         node, accu, _ = stack[-1]
 
         i0 = i
-        tok, i, seq, w = indentation(md, i)
-        tok2, i, seq2, w2 = prefix(md, i)
+        _, i, sp_or_tabs, w1 = indentation(md, i)
+        _, i, seq2, w2 = prefix(md, i)
 
         if seq2  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
-            tok, seq, w = i+1, '', 0
             i = stop
             return i
         elif md[i] in '\r\n':
@@ -342,26 +341,22 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif stack[-1][0] == 'fenced':
             i = i0
             return i
-        elif seq == ' ' and w >= 4:
+        elif sp_or_tabs and w1 >= 4:
             stack.append(('indented', [], i))
             return i
         elif seq2  == '#' and md[i] == ' ' and w2 <= 6:
             stack.append((f'h{w2}', [], i))
-            tok, seq, w = i+1, '', 0
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
-            tok, seq, w = i+1, '', 0
         elif md[i] in '+-*':
             if stack[-1][0] != 'ul':
                 stack.append(('ul', [], i))
             stack.append(('li', [], i))
-            tok, seq, w = i+1, '', 0
         elif seq2 == 'digits' and md[i] == '.':
             if stack[-1][0] != 'ol':
                 stack.append(('ol', [], i))
             stack.append(('li', [], i))
-            tok, seq, w = i+1, '', 0
-        elif md[i] == '<' and not seq and stack[-1][0] != 'html':
+        elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
         elif md[i] not in '\r\n' and stack[-1][0] in ('root', 'blockquote'):
@@ -557,6 +552,7 @@ def transform(md: str, start: int = 0) -> str:
     refs = []
     links = {}
     while i < len(md):
+        #print(stack)
         eol = md.find("\n", i)
         eol = len(md) if eol == -1 else eol
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])}')
@@ -588,6 +584,7 @@ def transform(md: str, start: int = 0) -> str:
             
     _ = context('\n', 0, 0, stack)
     all_fragments = stack[0][1]
+    dprint('\n')
     dprint('fragments', all_fragments, '\n')
     dprint('refs', refs)
     dprint('links', links)
