@@ -25,7 +25,7 @@ SOFTWARE.
 import argparse
 import re
 
-#DEBUG = True
+DEBUG = True
 
 patterns = ['*', '_', '`', '[', '<', '>', '&']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -239,11 +239,11 @@ def context(md: str, start: int, stop: int, stack) -> int:
         node = stack[node_cursor][0]
 
         i0 = i
-        tok, i, sp_or_tabs, w = indentation(md, i)
-        tok2, i, seq2, w2 = prefix(md, i)
+        tok, ii, sp_or_tabs, w = indentation(md, i0)
+        tok2, i, seq, w2 = prefix(md, ii)
         
         if node in ['p']:
-            if md[i] in '\r\n' or seq2 == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             else:
@@ -251,7 +251,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
         elif node in ['ul', 'ol', 'li']:
             if md[i] in '\r\n':
                 broken = True
-            elif sp_or_tabs and w >= 4 and (md[i] in '+-*' or (seq2 == 'digits' and md[i] == '.')):
+            elif sp_or_tabs and w >= 4 and (md[i] in '+-*' or (seq == 'digits' and md[i] == '.')):
                 nested = (i-tok) // 4
                 current = sum([1 for x in stack if x[0] in['ul', 'ol', 'li']]) // 2
                 if nested >= current:
@@ -262,7 +262,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
             elif md[i] in '+-*':
                 node_cursor += 1
                 broken = True
-            elif seq2 == 'digits' and md[i] == '.':
+            elif seq == 'digits' and md[i] == '.':
                 i = tok2
                 node_cursor += 1
                 broken = True
@@ -278,7 +278,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
             #else:
             #    node_cursor += 2
         elif node == 'fenced':
-            if seq2 == '`' and w2 == 3:
+            if seq == '`' and w2 == 3:
                 broken = True
                 i = stop
             else:
@@ -317,7 +317,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     """Build new blocks."""
     i = start
     sp_or_tabs, w1 = False, 0
-    seq2, w2 = '', 0
+    seq, w2 = '', 0
     phase = ''
     if stack[-1][0] == 'fenced':
         return i
@@ -329,10 +329,10 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         node, accu, _ = stack[-1]
 
         i0 = i
-        _, i, sp_or_tabs, w1 = indentation(md, i)
-        _, i, seq2, w2 = prefix(md, i)
+        _, ii, sp_or_tabs, w1 = indentation(md, i0)
+        _, i, seq, w2 = prefix(md, ii)
 
-        if seq2  == '`' and w2 == 3:
+        if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
             i = stop
             return i
@@ -344,7 +344,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif sp_or_tabs and w1 >= 4:
             stack.append(('indented', [], i))
             return i
-        elif seq2  == '#' and md[i] == ' ' and w2 <= 6:
+        elif seq  == '#' and md[i] == ' ' and w2 <= 6:
             stack.append((f'h{w2}', [], i))
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
@@ -352,18 +352,18 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             if stack[-1][0] != 'ul':
                 stack.append(('ul', [], i))
             stack.append(('li', [], i))
-        elif seq2 == 'digits' and md[i] == '.':
+        elif seq == 'digits' and md[i] == '.':
             if stack[-1][0] != 'ol':
                 stack.append(('ol', [], i))
             stack.append(('li', [], i))
         elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
-        elif md[i] not in '\r\n' and stack[-1][0] in ('root', 'blockquote'):
-            if md[i] == '\\':
-                i += 1
-            stack.append(('p', [], i))
-            return i
+        elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote'):
+            if md[ii] == '\\':
+                ii += 1
+            stack.append(('p', [], ii))
+            return ii
         else:
             return i
 
