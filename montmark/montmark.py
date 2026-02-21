@@ -24,8 +24,10 @@ SOFTWARE.
 
 import argparse
 import re
+import os
 
-DEBUG = True
+
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
 patterns = ['*', '_', '`', '[', '<', '>', '&']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -186,12 +188,12 @@ def prefix(md: str, start: int = 0) -> tuple:
 def html_text(element: str, content):
     """Prepare html segments but keep them in a list for future join."""
     isBlock = '\n' if element[0] in ['p', 'h', 'b', 'u', 'o', 'l'] else ''
-    isList = '\n' if element[0] in ['u', 'o'] else ''
+    isOnNL = '\n' if element[0] in ['u', 'o', 'b'] else ''
     if element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
         content.append(f'</code></pre>\n')
     elif element in ['em&strong']:
-        content.insert(0, f'<{element}>{isList}')
+        content.insert(0, f'<{element}>{isOnNL}')
         content.append(f'</{element}>{isBlock}')
     elif element in ['a', 'img']:
         title = f' title="{content["title"]}"' if 'title' in content else ''
@@ -210,7 +212,7 @@ def html_text(element: str, content):
     elif element in ['html']:
         pass
     else:
-        content.insert(0, f'<{element}>{isList}')
+        content.insert(0, f'<{element}>{isOnNL}')
         content.append(f'</{element}>{isBlock}')
     return content
 
@@ -269,7 +271,7 @@ def context(md: str, start: int, stop: int, stack) -> int:
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
-                i += 1
+                #i += 1
             else:
                 i = i0
                 broken = True
