@@ -217,7 +217,7 @@ def html_text(element: str, content):
     return content
 
         
-def context(md: str, start: int, stop: int, stack) -> int:
+def context(md: str, start: int, stop: int, stack, indents) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -239,35 +239,44 @@ def context(md: str, start: int, stop: int, stack) -> int:
     
     while i < len(md) and not hr:
         node = stack[node_cursor][0]
+        if node_cursor < len(stack) - 1:
+            next_node = stack[node_cursor+1][0]
+        else:
+            next_node = None
 
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
-        
+        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
+
         if node in ['p']:
             if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             else:
                 return i
-        elif node in ['ul', 'ol', 'li']:
-            if md[i] in '\r\n':
-                broken = True
-            elif sp_or_tabs and w >= 4 and (md[i] in '+-*' or (seq == 'digits' and md[i] == '.')):
-                nested = (i-tok) // 4
-                current = sum([1 for x in stack if x[0] in['ul', 'ol', 'li']]) // 2
-                if nested >= current:
-                    node_cursor += 2 
+        elif node in ['li']:
+            if next_node:
+                if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
+                    if i-i0 < indents[-1]:
+                        broken = True
+                    else:
+                        node_cursor += 1
+                        i -= 1
                 else:
-                    node_cursor += ((current - nested) * 2 + 1)
+                    node_cursor += 1
+                    i -= 1
+            else:
+                if md[i] not in ' \r\n':
+                    node_cursor -= 1
                     broken = True
-            elif md[i] in '+-*':
-                node_cursor += 1
-                broken = True
-            elif seq == 'digits' and md[i] == '.':
-                i = tok2
-                node_cursor += 1
-                broken = True
+                    indents.pop()
+                else:
+                    node_cursor += 1
+                    i -= 1
+        elif node in ['ul', 'ol']:
+             node_cursor += 1
+             i = i0 - 1
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
@@ -311,11 +320,15 @@ def context(md: str, start: int, stop: int, stack) -> int:
         current = stack[-1][1]
         if element == 'p':
             fragments.pop(-1)
+        if element == 'li':
+            tmp = fragments[1:]
+            if '<p>' not in tmp:
+                fragments = fragments[1:-1]
         current += html_text(element, fragments)
     return i
 
 
-def structure(md: str, start: int, stop: int, stack) -> list:
+def structure(md: str, start: int, stop: int, stack, indents) -> list:
     """Build new blocks."""
     i = start
     sp_or_tabs, w1 = False, 0
@@ -353,11 +366,14 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif md[i] in '+-*':
             if stack[-1][0] != 'ul':
                 stack.append(('ul', [], i))
+                indents.append(i-i0+2)
             stack.append(('li', [], i))
+            stack.append(('p', [], i))
         elif seq == 'digits' and md[i] == '.':
             if stack[-1][0] != 'ol':
                 stack.append(('ol', [], i))
             stack.append(('li', [], i))
+            stack.append(('p', [], i))
         elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
@@ -551,40 +567,40 @@ def transform(md: str, start: int = 0) -> str:
     res = ''
     i = start
     stack = [('root', [], i)] #node, accu, checkpoints
+    indents = [0]
     refs = []
     links = {}
     while i < len(md):
-        #print(stack)
         eol = md.find("\n", i)
         eol = len(md) if eol == -1 else eol
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])}')
         
         phase = "in_context"
-        dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ', end="")
-        i = context(md, i, eol, stack)
-        dprint(f'=> {i:2} | {".".join([x[0] for x in stack[0:]])}')
+        dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
+        i = context(md, i, eol, stack, indents)
+        dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
         phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
-            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ', end="")
+            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ')
             link_id, url, title, _ = check_link_id(md, i)
             if link_id:
                 links[link_id.upper()] = (url, title)
                 i = eol
                 continue
-            i = structure(md, i, eol, stack)
-            dprint(f'=> {i:2} | {".".join([x[0] for x in stack[0:]])}')
+            i = structure(md, i, eol, stack, indents)
+            dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
-            dprint(f'{i:2} | _p | {" ":25} ', end="")
+            dprint(f'{i:2} | _p | {" ":25} ')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, refs)
-            dprint(f'=> {r:2} |')
+            dprint(f'        | => {r:2}')
 
         i = eol+1
             
-    _ = context('\n', 0, 0, stack)
+    _ = context('\n', 0, 0, stack, indents)
     all_fragments = stack[0][1]
     dprint('\n')
     dprint('fragments', all_fragments, '\n')
