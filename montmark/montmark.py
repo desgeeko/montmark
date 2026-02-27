@@ -185,7 +185,7 @@ def prefix(md: str, start: int = 0) -> tuple:
         i += 1
 
 
-def html_text(element: str, content):
+def html_text(element: str, content, last):
     """Prepare html segments but keep them in a list for future join."""
     if element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
@@ -215,12 +215,12 @@ def html_text(element: str, content):
         pass
     else:
         content.insert(0, f'<{element}>')
-        if element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
+        if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
             content.insert(0, '\n')
         if element[0] in ['b', 'u', 'o']:
             content.append('\n')
         content.append(f'</{element}>')
-        if element[0] in ['b']:
+        if element[0] in ['b', 'u', 'o']:
             content.append('\n')
     return content
 
@@ -323,7 +323,7 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         i += 1
         
     x = len(stack) - node_cursor
-    #dprint('        | ', stack)
+    dprint('        | ', stack)
     for _ in range(len(stack) - node_cursor):
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
@@ -335,8 +335,10 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         if element == 'li':
             if '<p>' not in fragments[2:]:
                 fragments = fragments[2:-1]
-        current += html_text(element, fragments)
-    #dprint('        | ', stack)
+        dprint('current   | ', current)
+        last = current[-1] if current else ''
+        current += html_text(element, fragments, last)
+    dprint('        | ', stack)
     return i
 
 
@@ -620,7 +622,7 @@ def transform(md: str, start: int = 0) -> str:
         all_fragments = all_fragments[1:]
     dprint('fragments', all_fragments, '\n')
     dprint('refs', refs)
-    dprint('links', links)
+    dprint('links', links, '\n')
     for a, j in refs:
         link_id = a
         l = links.get(link_id.upper(), ('', ''))
