@@ -220,7 +220,7 @@ def html_text(element: str, content, last):
         if element[0] in ['b', 'u', 'o']:
             content.append('\n')
         content.append(f'</{element}>')
-        if element[0] in ['b', 'u', 'o']:
+        if element[0] in ['u', 'o']:
             content.append('\n')
     return content
 
@@ -261,6 +261,9 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
             if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
+            elif md[i] == '>':
+                broken = True
+                i = i
             else:
                 return i
         elif node in ['li']:
@@ -288,14 +291,9 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
-                #i += 1
             else:
                 i = i0
                 broken = True
-            #if md[i] in '\r\n':
-            #    broken = True
-            #else:
-            #    node_cursor += 2
         elif node == 'fenced':
             if seq == '`' and w2 == 3:
                 broken = True
