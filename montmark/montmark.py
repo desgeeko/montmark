@@ -187,14 +187,15 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content):
     """Prepare html segments but keep them in a list for future join."""
-    isBlock = '\n' if element[0] in ['p', 'h', 'b', 'u', 'o', 'l'] else ''
-    isOnNL = '\n' if element[0] in ['u', 'o', 'b'] else ''
     if element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
-        content.append(f'</code></pre>\n')
+        content.insert(0, '\n')
+        content.append(f'\n</code></pre>')
+        content.append('\n')
     elif element in ['em&strong']:
-        content.insert(0, f'<{element}>{isOnNL}')
-        content.append(f'</{element}>{isBlock}')
+        content.insert(0, f'<{element}>')
+        content.append(f'</{element}>')
+        content.append('\n')
     elif element in ['a', 'img']:
         title = f' title="{content["title"]}"' if 'title' in content else ''
         obj = content[0]["obj"]
@@ -208,12 +209,19 @@ def html_text(element: str, content):
         obj.append(f'</{element}>')
         content = obj
     elif element in ['hr']:
-        content.insert(0, f'\n<{element} />')
+        content.insert(0, f'<{element} />')
+        content.insert(0, '\n')
     elif element in ['html']:
         pass
     else:
-        content.insert(0, f'<{element}>{isOnNL}')
-        content.append(f'</{element}>{isBlock}')
+        content.insert(0, f'<{element}>')
+        if element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
+            content.insert(0, '\n')
+        if element[0] in ['b', 'u', 'o']:
+            content.append('\n')
+        content.append(f'</{element}>')
+        if element[0] in ['b']:
+            content.append('\n')
     return content
 
         
@@ -315,16 +323,20 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         i += 1
         
     x = len(stack) - node_cursor
+    #dprint('        | ', stack)
     for _ in range(len(stack) - node_cursor):
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
         if element == 'p':
-            fragments.pop(-1)
+            pass
+            #print(fragments)
+            #fragments.pop(-1)
+            #print(fragments)
         if element == 'li':
-            tmp = fragments[1:]
-            if '<p>' not in tmp:
-                fragments = fragments[1:-1]
+            if '<p>' not in fragments[2:]:
+                fragments = fragments[2:-1]
         current += html_text(element, fragments)
+    #dprint('        | ', stack)
     return i
 
 
@@ -344,8 +356,9 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         node, accu, _ = stack[-1]
 
         i0 = i
-        _, ii, sp_or_tabs, w1 = indentation(md, i0)
+        _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
+        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
@@ -356,20 +369,20 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         elif stack[-1][0] == 'fenced':
             i = i0
             return i
-        elif sp_or_tabs and w1 >= 4:
+        elif sp_or_tabs and w >= 4:
             stack.append(('indented', [], i))
             return i
         elif seq  == '#' and md[i] == ' ' and w2 <= 6:
             stack.append((f'h{w2}', [], i))
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
-        elif md[i] in '+-*':
+        elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
                 stack.append(('ul', [], i))
                 indents.append(i-i0+2)
             stack.append(('li', [], i))
             stack.append(('p', [], i))
-        elif seq == 'digits' and md[i] == '.':
+        elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ol':
                 stack.append(('ol', [], i))
             stack.append(('li', [], i))
@@ -551,7 +564,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
     else:
         stack[-1][1].append(md[tok:stop])
     for el, _, _ in stack:
-        if el in ['p', 'fenced']:
+        if el in ['fenced']: # and p?
             stack[-1][1].append('\n')
     return stop+1
 
@@ -603,6 +616,8 @@ def transform(md: str, start: int = 0) -> str:
     _ = context('\n', 0, 0, stack, indents)
     all_fragments = stack[0][1]
     dprint('\n')
+    if all_fragments[0] == '\n':
+        all_fragments = all_fragments[1:]
     dprint('fragments', all_fragments, '\n')
     dprint('refs', refs)
     dprint('links', links)
