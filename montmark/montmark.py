@@ -323,7 +323,7 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         i += 1
         
     x = len(stack) - node_cursor
-    dprint('        | ', stack)
+    #dprint('        | ', stack)
     for _ in range(len(stack) - node_cursor):
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
@@ -335,10 +335,9 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         if element == 'li':
             if '<p>' not in fragments[2:]:
                 fragments = fragments[2:-1]
-        dprint('current   | ', current)
         last = current[-1] if current else ''
         current += html_text(element, fragments, last)
-    dprint('        | ', stack)
+    #dprint('        | ', stack)
     return i
 
 
@@ -360,7 +359,7 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
+        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} indents={indents}')
 
         if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
@@ -381,7 +380,8 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
                 stack.append(('ul', [], i))
-                indents.append(i-i0+2)
+                _, ix, _, _ = indentation(md, i+1)
+                indents.append(ix-i0)
             stack.append(('li', [], i))
             stack.append(('p', [], i))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
@@ -563,11 +563,15 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
 
     if stack[-1][0][0]  == 'h':
         stack[-1][1].append(md[tok:stop].rstrip(' ').rstrip('#'))
+    elif stack[-1][0]  in ['fenced', 'p']:
+        if stack[-1][1]:
+            stack[-1][1].append('\n')
+        stack[-1][1].append(md[tok:stop])
     else:
         stack[-1][1].append(md[tok:stop])
-    for el, _, _ in stack:
-        if el in ['fenced']: # and p?
-            stack[-1][1].append('\n')
+    #for el, _, _ in stack:
+    #    if el in ['fenced', 'p']:
+    #        stack[-1][1].append('\n')
     return stop+1
 
 
