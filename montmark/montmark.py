@@ -225,7 +225,7 @@ def html_text(element: str, content, last):
     return content
 
         
-def context(md: str, start: int, stop: int, stack, indents) -> int:
+def context(md: str, start: int, stop: int, stack, indents, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -258,12 +258,9 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
 
         if node in ['p']:
-            if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if md[i] in '>-.\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
-            elif md[i] == '>':
-                broken = True
-                i = i
             else:
                 return i
         elif node in ['li']:
@@ -320,8 +317,8 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
             return i
         i += 1
         
-    x = len(stack) - node_cursor
-    #dprint('        | ', stack)
+    if close:
+        node_cursor = 1
     for _ in range(len(stack) - node_cursor):
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
@@ -335,7 +332,6 @@ def context(md: str, start: int, stop: int, stack, indents) -> int:
                 fragments = fragments[2:-1]
         last = current[-1] if current else ''
         current += html_text(element, fragments, last)
-    #dprint('        | ', stack)
     return i
 
 
@@ -357,7 +353,7 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} indents={indents}')
+        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i} indents={indents}')
 
         if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
@@ -396,7 +392,7 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
             stack.append(('p', [], ii))
             return ii
         else:
-            return i
+            return ii
 
         i += 1
     return i
@@ -439,7 +435,7 @@ def close_element(md, tok, i, stack, offset):
     prev = stack.pop()
     current = stack[-1][1]
     if prev[0] != 'span':
-        current += html_text(prev[0], prev[1])
+        current += html_text(prev[0], prev[1], '')
     else:
         current += prev[1]
     tok = i + offset
@@ -489,6 +485,10 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
     stl = True
     skip = False
 
+    if stack[-1][0]  in ['fenced', 'p']:
+        if stack[-1][1]:
+            stack[-1][1].append('\n')
+
     if stack[-1][0] == 'html':
         stack[-1][1].append(md[start:stop])
         stack[-1][1].append('\n')
@@ -501,6 +501,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
 
     for match in matches:
         i = match.start()
+        dprint('        | ', i, stack)
         if i > 0 and md[i-1] == '\\':
             stack[-1][1].append(md[tok:i-1])
             tok = i
@@ -561,10 +562,6 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
 
     if stack[-1][0][0]  == 'h':
         stack[-1][1].append(md[tok:stop].rstrip(' ').rstrip('#'))
-    elif stack[-1][0]  in ['fenced', 'p']:
-        if stack[-1][1]:
-            stack[-1][1].append('\n')
-        stack[-1][1].append(md[tok:stop])
     else:
         stack[-1][1].append(md[tok:stop])
     #for el, _, _ in stack:
@@ -616,8 +613,10 @@ def transform(md: str, start: int = 0) -> str:
             dprint(f'        | => {r:2}')
 
         i = eol+1
-            
-    _ = context('\n', 0, 0, stack, indents)
+
+    dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
+    _ = context('\n', 0, 0, stack, indents, close=True)
+    dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
     all_fragments = stack[0][1]
     dprint('\n')
     if all_fragments[0] == '\n':
