@@ -283,8 +283,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif len(node) > 2 and node[:2] in ['ul', 'ol']:
-             node_cursor += 1
-             i = i0 - 1
+            if md[i] in '>' or seq == '#':
+                broken = True
+            else:
+                node_cursor += 1
+                i = i0 - 1
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
