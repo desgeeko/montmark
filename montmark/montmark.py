@@ -262,9 +262,15 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'x       | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
 
         if node == 'p':
-            if md[i] in '>-.\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if md[i] in '>\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
+            elif md[i] in '-.':
+                broken = True
+                if len(stack) >2 and stack[-3][0][:2] in ['ul', 'ol']:
+                    i = start + int(stack[-3][0][2:])
+                else:
+                    i = i0
             else:
                 return i
         elif node == 'li':
@@ -275,12 +281,12 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                     offset = int(stack[-2][0][2:])
                 else:
                     offset = 0
-                if i-i0 < offset:
+                if i-start < offset:
                     broken = True
                 else:
                     node_cursor += 1
                     i -= 1
-            elif md[i] not in ' \r\n':
+            elif next_node != 'p' and md[i] not in ' \r\n':
                 node_cursor -= 1
                 broken = True
             else:
@@ -352,7 +358,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         return eol
     while i < len(md):
         node, accu, _ = stack[-1]
-
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
@@ -375,7 +380,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
-            if stack[-1][0] != 'ul':
+            if stack[-1][0][:2] != 'ul':
                 if len(stack) >= 2 and stack[-2][0][:2] == 'ul':
                     offset = int(stack[-2][0][2:])
                 else:
@@ -386,7 +391,12 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append(('p', [], i))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ol':
-                stack.append(('ol', [], i))
+                if len(stack) >= 2 and stack[-2][0][:2] == 'ol':
+                    offset = int(stack[-2][0][2:])
+                else:
+                    offset = 0
+                _, ix, _, _ = indentation(md, i+1)
+                stack.append((f'ol{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
             stack.append(('p', [], i))
         elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
