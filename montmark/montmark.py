@@ -251,15 +251,10 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     
     while i < len(md) and not hr and not close:
         node = stack[node_cursor][0]
-        if node_cursor < len(stack) - 1:
-            next_node = stack[node_cursor+1][0]
-        else:
-            next_node = None
-
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
-        dprint(f'x       | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
+        dprint(f'x       | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node == 'p':
             if md[i] in '>\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
@@ -275,18 +270,13 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 return i
         elif node == 'li':
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
-                if stack[-3][0][:2] in ['ul', 'ol']:
-                    offset = int(stack[-3][0][2:])
-                elif stack[-2][0][:2] in ['ul', 'ol']:
-                    offset = int(stack[-2][0][2:])
-                else:
-                    offset = 0
+                offset = int(stack[node_cursor-1][0][2:])
                 if i-start < offset:
                     broken = True
                 else:
                     node_cursor += 1
                     i -= 1
-            elif next_node != 'p' and md[i] not in ' \r\n':
+            elif stack[-1][0] != 'p' and md[i] not in ' \r\n':
                 node_cursor -= 1
                 broken = True
             else:
