@@ -185,9 +185,11 @@ def prefix(md: str, start: int = 0) -> tuple:
         i += 1
 
 
-def html_text(element: str, content, last):
+def html_text(element: str, content, upper, last):
     """Prepare html segments but keep them in a list for future join."""
-    if element in ['fenced', 'indented']:
+    if element == 'p' and upper == 'li':
+        element = ''
+    elif element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
         content.insert(0, '\n')
         content.append(f'\n</code></pre>')
@@ -214,6 +216,8 @@ def html_text(element: str, content, last):
     elif element in ['html']:
         pass
     else:
+        if len(element) > 2 and element[:2] in ['ul', 'ol']:
+            element = element[:2]
         content.insert(0, f'<{element}>')
         if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
             content.insert(0, '\n')
@@ -225,7 +229,7 @@ def html_text(element: str, content, last):
     return content
 
         
-def context(md: str, start: int, stop: int, stack, indents, close = False) -> int:
+def context(md: str, start: int, stop: int, stack, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -245,7 +249,7 @@ def context(md: str, start: int, stop: int, stack, indents, close = False) -> in
     if hr:
         return eol
     
-    while i < len(md) and not hr:
+    while i < len(md) and not hr and not close:
         node = stack[node_cursor][0]
         if node_cursor < len(stack) - 1:
             next_node = stack[node_cursor+1][0]
@@ -255,34 +259,34 @@ def context(md: str, start: int, stop: int, stack, indents, close = False) -> in
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
+        dprint(f'x       | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i} next_node={next_node}')
 
-        if node in ['p']:
+        if node == 'p':
             if md[i] in '>-.\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             else:
                 return i
-        elif node in ['li']:
-            if next_node:
-                if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
-                    if i-i0 < indents[-1]:
-                        broken = True
-                    else:
-                        node_cursor += 1
-                        i -= 1
+        elif node == 'li':
+            if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
+                if stack[-3][0][:2] in ['ul', 'ol']:
+                    offset = int(stack[-3][0][2:])
+                elif stack[-2][0][:2] in ['ul', 'ol']:
+                    offset = int(stack[-2][0][2:])
                 else:
-                    node_cursor += 1
-                    i -= 1
-            else:
-                if md[i] not in ' \r\n':
-                    node_cursor -= 1
+                    offset = 0
+                if i-i0 < offset:
                     broken = True
-                    indents.pop()
                 else:
                     node_cursor += 1
                     i -= 1
-        elif node in ['ul', 'ol']:
+            elif md[i] not in ' \r\n':
+                node_cursor -= 1
+                broken = True
+            else:
+                node_cursor += 1
+                i -= 1
+        elif len(node) > 2 and node[:2] in ['ul', 'ol']:
              node_cursor += 1
              i = i0 - 1
         elif node == 'blockquote':
@@ -322,20 +326,19 @@ def context(md: str, start: int, stop: int, stack, indents, close = False) -> in
     for _ in range(len(stack) - node_cursor):
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
-        if element == 'p':
-            pass
-            #print(fragments)
-            #fragments.pop(-1)
-            #print(fragments)
-        if element == 'li':
-            if '<p>' not in fragments[2:]:
-                fragments = fragments[2:-1]
+        upper = stack[-1][0]
+        #if element == 'p':
+        #    dprint('        | exit p ', stack, fragments, upper)
+        #if element == 'li':
+        #    if '<p>' not in fragments[2:]:
+        #        pass
+                #fragments = fragments[2:-1]
         last = current[-1] if current else ''
-        current += html_text(element, fragments, last)
+        current += html_text(element, fragments, upper, last)
     return i
 
 
-def structure(md: str, start: int, stop: int, stack, indents) -> list:
+def structure(md: str, start: int, stop: int, stack) -> list:
     """Build new blocks."""
     i = start
     sp_or_tabs, w1 = False, 0
@@ -353,7 +356,7 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i} indents={indents}')
+        dprint(f'y       | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
         if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
@@ -373,9 +376,12 @@ def structure(md: str, start: int, stop: int, stack, indents) -> list:
             stack.append(('blockquote', [], i))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
-                stack.append(('ul', [], i))
+                if len(stack) >= 2 and stack[-2][0][:2] == 'ul':
+                    offset = int(stack[-2][0][2:])
+                else:
+                    offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                indents.append(ix-i0)
+                stack.append((f'ul{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
             stack.append(('p', [], i))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
@@ -435,7 +441,7 @@ def close_element(md, tok, i, stack, offset):
     prev = stack.pop()
     current = stack[-1][1]
     if prev[0] != 'span':
-        current += html_text(prev[0], prev[1], '')
+        current += html_text(prev[0], prev[1], '', '')
     else:
         current += prev[1]
     tok = i + offset
@@ -581,7 +587,6 @@ def transform(md: str, start: int = 0) -> str:
     res = ''
     i = start
     stack = [('root', [], i)] #node, accu, checkpoints
-    indents = [0]
     refs = []
     links = {}
     while i < len(md):
@@ -591,7 +596,7 @@ def transform(md: str, start: int = 0) -> str:
         
         phase = "in_context"
         dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
-        i = context(md, i, eol, stack, indents)
+        i = context(md, i, eol, stack)
         dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
         phase = "in_structure" if i < eol else "fforward"
 
@@ -602,7 +607,7 @@ def transform(md: str, start: int = 0) -> str:
                 links[link_id.upper()] = (url, title)
                 i = eol
                 continue
-            i = structure(md, i, eol, stack, indents)
+            i = structure(md, i, eol, stack)
             dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
@@ -614,8 +619,8 @@ def transform(md: str, start: int = 0) -> str:
 
         i = eol+1
 
-    dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
-    _ = context('\n', 0, 0, stack, indents, close=True)
+    dprint(f'{i:2} | ef | {".".join([x[0] for x in stack[0:]]):25} ')
+    _ = context('\n', 0, 0, stack, close=True)
     dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
     all_fragments = stack[0][1]
     dprint('\n')
