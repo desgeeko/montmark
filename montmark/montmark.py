@@ -198,17 +198,29 @@ def html_text(element: str, content, upper, last):
         content.insert(0, f'<{element}>')
         content.append(f'</{element}>')
         content.append('\n')
-    elif element in ['a', 'img']:
+    elif element in ['a']:
         title = f' title="{content["title"]}"' if 'title' in content else ''
-        obj = content[0]["obj"]
+        text = content[0]['square'][-1]
+        obj = []
         url = content[0].get("url")
         title = content[0].get("title")
-        obj.insert(0, f'<{element} href="')
-        obj.insert(1, f'{url}')
-        obj.insert(2, f'" title="')
-        obj.insert(3, f'{title}')
-        obj.insert(4, f'">')
+        obj.append(f'<{element} href="{url}"')
+        if title:
+            obj.append(f' title="{title}"')
+        obj.append(f'>{text}')
         obj.append(f'</{element}>')
+        content = obj
+    elif element in ['img']:
+        title = f' title="{content["title"]}"' if 'title' in content else ''
+        alt = content[0]['square'][-1]
+        obj = []
+        url = content[0].get("url")
+        title = content[0].get("title")
+        obj.append(f'<{element} src="{url}"')
+        obj.append(f' alt="{alt}"')
+        if title:
+            obj.append(f' title="{title}"')
+        obj.append(f' />')
         content = obj
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
@@ -242,7 +254,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     if setext:
         if stack[-1][0] == 'p':
             elt = 'h1' if setext == '=' else 'h2'
-            stack[-1] = (elt, stack[-1][1][:-1], stack[-1][2])
+            stack[-1] = (elt, stack[-1][1], stack[-1][2])
         return eol
 
     hr, eol = check_hr(md, i)
@@ -254,7 +266,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
-        dprint(f'x       | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
+        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node == 'p':
             if md[i] in '>\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
@@ -354,7 +366,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'y       | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
+        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
         if seq  == '`' and w2 == 3:
             stack.append(('fenced', [], i))
@@ -446,7 +458,8 @@ def close_element(md, tok, i, stack, offset):
     if prev[0] != 'span':
         current += html_text(prev[0], prev[1], '', '')
     else:
-        current += prev[1]
+        url = prev[1][0][1:-1]
+        current += html_text('a', [{'square': [url], 'url': url}], '', '')
     tok = i + offset
     return tok
 
@@ -466,7 +479,7 @@ def detect_link(md, i, stop):
     tmp = [('tmp', [''], 0)]
     eob = md.find(']', i, stop)
     i = payload(md, i, eob, tmp, None)
-    res['obj'] = tmp[0][1]
+    res['square'] = tmp[0][1]
     if md[i] == '(':
         eop = md.find(')', i+1, stop)
         boq = md.find('"', i+1, eop)
@@ -480,7 +493,7 @@ def detect_link(md, i, stop):
         if link_id:
             res['link_id'] = link_id
         else:
-            res['link_id'] = res['obj'][1]
+            res['link_id'] = res['square'][1]
         i = eob + 1
     return res, i
 
@@ -563,14 +576,14 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
                 for _, accu, _ in stack:
                     x += len(accu)
                 refs.append((rr['link_id'], x+1))
-            tok = close_element(md, tok, i, stack, 1)
+            tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
 
     if stack[-1][0][0]  == 'h':
-        stack[-1][1].append(md[tok:stop].rstrip(' ').rstrip('#'))
+        stack[-1][1].append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' '))
     else:
         stack[-1][1].append(md[tok:stop])
     #for el, _, _ in stack:
