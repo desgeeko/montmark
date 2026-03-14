@@ -225,6 +225,8 @@ def html_text(element: str, content, upper, last):
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
         content.insert(0, '\n')
+    elif element in ['br']:
+        content[-1] = f'<{element} />'
     elif element in ['html']:
         pass
     else:
@@ -285,6 +287,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 offset = int(stack[node_cursor-1][0][2:])
                 if i-start < offset:
                     broken = True
+                    i = ii
                 else:
                     node_cursor += 1
                     i -= 1
@@ -395,7 +398,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append(('li', [], i))
             stack.append(('p', [], i))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
-            if stack[-1][0] != 'ol':
+            if stack[-1][0][:2] != 'ol':
                 if len(stack) >= 2 and stack[-2][0][:2] == 'ol':
                     offset = int(stack[-2][0][2:])
                 else:
@@ -582,10 +585,17 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
         else:
             skip = False
 
-    if stack[-1][0][0]  == 'h':
-        stack[-1][1].append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' '))
+    last_elt = stack[-1][0]
+    last_content = stack[-1][1]
+    if last_elt[0]  == 'h':
+        last_content.append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' '))
     else:
-        stack[-1][1].append(md[tok:stop])
+        last_content.append(md[tok:stop])
+    if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
+        last_content[-1] = last_content[-1].rstrip(' ')
+        #ast_content.append('<br />')
+        stack.append(('br', [''], 0))
+        close_element(md, 0, 0, stack, 0)
     #for el, _, _ in stack:
     #    if el in ['fenced', 'p']:
     #        stack[-1][1].append('\n')

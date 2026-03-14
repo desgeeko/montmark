@@ -194,6 +194,21 @@ p1 b</p>
 '''
 ,
 ###
+'simple ordered list'
+,
+'''
+1. l1
+2. l2
+'''
+,
+'''
+<ol>
+<li>l1</li>
+<li>l2</li>
+</ol>
+'''
+,
+###
 'code block'
 ,
 '''
