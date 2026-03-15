@@ -28,6 +28,7 @@ import os
 
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
+LINK_DEL = '@@@'
 
 patterns = ['*', '_', '`', '[', '<', '>', '&']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -200,18 +201,23 @@ def html_text(element: str, content, upper, last):
         content.append(f'</{element}>')
         content.append('\n')
     elif element in ['a']:
-        title = f' title="{content["title"]}"' if 'title' in content else ''
         text = content[0]['square'][-1]
         obj = []
         url = content[0].get("url")
-        title = content[0].get("title")
+        link_id = content[0].get("link_id")
+        title = content[0].get("title", '')
         obj.append(f'<{element} href="')
-        obj.append(f'{url}')
+        if link_id:
+            obj.append(f'{LINK_DEL}{link_id}{LINK_DEL}')
+        else:
+            obj.append(f'{url}')
         obj.append(f'"')
         if title:
             obj.append(f' title="')
             obj.append(f'{title}')
             obj.append(f'"')
+        else:
+            obj.append(f'')
         obj.append(f'>{text}')
         obj.append(f'</{element}>')
         content = obj
@@ -248,7 +254,7 @@ def html_text(element: str, content, upper, last):
             content.append('\n')
     return content
 
-        
+
 def context(md: str, start: int, stop: int, stack, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
@@ -490,7 +496,7 @@ def detect_link(md, i, stop):
     res = {}
     tmp = [('tmp', [''], 0)]
     eob = md.find(']', i, stop)
-    i = payload(md, i, eob, tmp, None)
+    i = payload(md, i, eob, tmp)
     res['square'] = tmp[0][1]
     if md[i] == '(':
         eop = md.find(')', i+1, stop)
@@ -510,7 +516,7 @@ def detect_link(md, i, stop):
     return res, i
 
 
-def payload(md: str, start: int, stop: int, stack, refs) -> list:
+def payload(md: str, start: int, stop: int, stack) -> list:
     """Process spans in the content."""
     if md[start] == '\n':
         return stop+1
@@ -587,8 +593,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
                 x = 0
                 for _, accu, _ in stack:
                     x += len(accu)
-                rr['title'] = 'None'
-                refs.append((rr['link_id'], x+1))
+                rr['title'] = ''
             tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
             tok = html_entity(md, tok, i, stack)
@@ -603,12 +608,8 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
         last_content.append(md[tok:stop])
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
-        #ast_content.append('<br />')
         stack.append(('br', [''], 0))
         close_element(md, 0, 0, stack, 0)
-    #for el, _, _ in stack:
-    #    if el in ['fenced', 'p']:
-    #        stack[-1][1].append('\n')
     return stop+1
 
 
@@ -650,7 +651,7 @@ def transform(md: str, start: int = 0) -> str:
         if phase == "in_payload":
             dprint(f'{i:2} | _p | {" ":25} ')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
-            payload(md, i, r, stack, refs)
+            payload(md, i, r, stack)
             dprint(f'        | => {r:2}')
 
         i = eol+1
@@ -663,13 +664,14 @@ def transform(md: str, start: int = 0) -> str:
     if all_fragments[0] == '\n':
         all_fragments = all_fragments[1:]
     dprint('fragments', all_fragments, '\n')
-    dprint('refs', refs)
     dprint('links', links, '\n')
-    for a, j in refs:
-        link_id = a
-        l = links.get(link_id.upper(), ('', ''))
-        all_fragments[j] = l[0]
-        all_fragments[j+3] = l[1]
+    for i, x in enumerate(all_fragments):
+        if len(x) > 6 and x[:3] == LINK_DEL:
+            link_id = x[3:-3]
+            url, title = links.get(link_id.upper(), ('', ''))
+            all_fragments[i] = url
+            if title:
+                all_fragments[i+2] = f' title="{title}"'
     res = ''.join(all_fragments)
     return res
 

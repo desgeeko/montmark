@@ -417,6 +417,19 @@ p1a [text](url) p1b
 '[text](url "title")','<p><a href="url" title="title">text</a></p>'
 ,
 ###
+'ref link'
+,
+'''
+a [text][ref1] b
+
+[ref1]: https://example
+'''
+,
+'''
+<p>a <a href="https://example">text</a> b</p>
+'''
+,
+###
 'emphasis'
 ,
 'a *b c* d','<p>a <em>b c</em> d</p>'
