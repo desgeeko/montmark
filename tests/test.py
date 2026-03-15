@@ -50,7 +50,7 @@ p2
 '''
 ,
 ###
-'two spaces at eol inserts br'
+'2 spaces at eol inserts br'
 ,
 '''
 p1a.  
@@ -68,7 +68,7 @@ p1b</p>
 '## t2','<h2>t2</h2>'
 ,
 ###
-'atx header with closing hashes'
+'atx with closing hashes'
 ,
 '## t2 ##','<h2>t2</h2>'
 ,
@@ -241,7 +241,7 @@ p2
 '''
 ,
 ###
-'simple inline link inside paragraph'
+'simple inline link inside p'
 ,
 '''
 p1a [text](url) p1b

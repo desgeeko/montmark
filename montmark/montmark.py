@@ -271,7 +271,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node == 'p':
-            if md[i] in '>\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             elif md[i] in '-.':
@@ -281,7 +281,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 else:
                     i = i0
             else:
-                return i
+                node_cursor += 1
+                i -= 1
         elif node == 'li':
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 offset = int(stack[node_cursor-1][0][2:])
@@ -306,8 +307,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
+            elif node_cursor == len(stack) - 2:
+                node_cursor += 1
+                i -= 1
             else:
-                i = i0
+                #i = i0
                 broken = True
         elif node == 'fenced':
             if seq == '`' and w2 == 3:
@@ -332,9 +336,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         if broken:
             break
         elif node_cursor >= len(stack):
-            return i
+            return i+1
         i += 1
-        
     if close:
         node_cursor = 1
     for _ in range(len(stack) - node_cursor):
