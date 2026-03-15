@@ -63,9 +63,34 @@ p1b</p>
 '''
 ,
 ###
-'atx header'
+'atx h1'
+,
+'# t1','<h1>t1</h1>'
+,
+###
+'atx h2'
 ,
 '## t2','<h2>t2</h2>'
+,
+###
+'atx h3'
+,
+'### t3','<h3>t3</h3>'
+,
+###
+'atx h4'
+,
+'#### t4','<h4>t4</h4>'
+,
+###
+'atx h5'
+,
+'##### t5','<h5>t5</h5>'
+,
+###
+'atx h6'
+,
+'###### t6','<h6>t6</h6>'
 ,
 ###
 'atx with closing hashes'
@@ -99,6 +124,33 @@ t2
 ,
 '''
 <h2>t2</h2>
+'''
+,
+###
+'p just after atx header'
+,
+'''
+## t1
+a b c
+'''
+,
+'''
+<h2>t1</h2>
+<p>a b c</p>
+'''
+,
+###
+'p just after setext header'
+,
+'''
+t1
+==
+a b c
+'''
+,
+'''
+<h1>t1</h1>
+<p>a b c</p>
 '''
 ,
 ###
@@ -179,11 +231,41 @@ p1 b</p>
 '''
 ,
 ###
-'simple unordered list'
+'unordered asterisks list'
 ,
 '''
 * l1
 * l2
+'''
+,
+'''
+<ul>
+<li>l1</li>
+<li>l2</li>
+</ul>
+'''
+,
+###
+'unordered pluses list'
+,
+'''
++ l1
++ l2
+'''
+,
+'''
+<ul>
+<li>l1</li>
+<li>l2</li>
+</ul>
+'''
+,
+###
+'unordered hyphen-minus list'
+,
+'''
+- l1
+- l2
 '''
 ,
 '''
@@ -206,6 +288,83 @@ p1 b</p>
 <li>l1</li>
 <li>l2</li>
 </ol>
+'''
+,
+###
+'nested list 2-indent'
+,
+'''
+- i1
+  - i1.1
+- i2
+'''
+,
+'''
+<ul>
+<li>i1
+<ul>
+<li>i1.1</li>
+</ul>
+</li>
+<li>i2</li>
+</ul>
+'''
+,
+###
+'nested list 4-indent'
+,
+'''
+- i1
+    - i1.1
+- i2
+'''
+,
+'''
+<ul>
+<li>i1
+<ul>
+<li>i1.1</li>
+</ul>
+</li>
+<li>i2</li>
+</ul>
+'''
+,
+###
+'list item continuation'
+,
+'''
+- i1
+a b c
+- i2
+'''
+,
+'''
+<ul>
+<li>i1
+a b c</li>
+<li>i2</li>
+</ul>
+'''
+,
+###
+'2 p in list item'
+,
+'''
+- p1
+
+  p2
+
+a
+'''
+,
+'''
+<ul>
+<li>
+<p>p1</p>
+<p>p2</p></li>
+</ul>
+<p>a</p>
 '''
 ,
 ###
@@ -300,9 +459,11 @@ def make_test(text, expected):
         self.assertEqual(montmark.transform(text).strip(), expected.strip(), msg=text)
     return test_func
 
+nb = 1
 for i in range(0, len(tests), 3):
     group = tuple(tests[i:i+3])
     test_name, text, expected = group
-    setattr(TestMarkdown, f'test_{test_name.replace(" ", "_")}', make_test(text, expected))
+    setattr(TestMarkdown, f'test_{nb:03}_{test_name.replace(" ", "_")}', make_test(text, expected))
+    nb += 1
 
 

@@ -187,7 +187,7 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content, upper, last):
     """Prepare html segments but keep them in a list for future join."""
-    if element == 'p' and upper == 'li':
+    if element == 'p_' and upper == 'li':
         element = ''
     elif element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
@@ -230,7 +230,7 @@ def html_text(element: str, content, upper, last):
     elif element in ['html']:
         pass
     else:
-        if len(element) > 2 and element[:2] in ['ul', 'ol']:
+        if len(element) > 2 and element[:2] in ['ul', 'ol', 'li']:
             element = element[:2]
         content.insert(0, f'<{element}>')
         if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
@@ -254,7 +254,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
 
     setext, eol = check_setext(md, i)
     if setext:
-        if stack[-1][0] == 'p':
+        if stack[-1][0] in ['p', 'p_']:
             elt = 'h1' if setext == '=' else 'h2'
             stack[-1] = (elt, stack[-1][1], stack[-1][2])
         return eol
@@ -270,7 +270,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         tok2, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
-        if node == 'p':
+        if node in ['p', 'p_']:
             if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
@@ -283,16 +283,19 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 node_cursor += 1
                 i -= 1
-        elif node == 'li':
+        elif len(node) >= 2 and node == 'li':
+            offset = int(stack[node_cursor-1][0][2:])
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
-                offset = int(stack[node_cursor-1][0][2:])
                 if i-start < offset:
                     broken = True
                     i = ii
                 else:
                     node_cursor += 1
                     i -= 1
-            elif stack[-1][0] != 'p' and md[i] not in ' \r\n':
+            elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w>=offset:
+                node_cursor += 1
+                i = ii - 1
+            elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
             else:
@@ -344,12 +347,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         element, fragments, _ = stack.pop()
         current = stack[-1][1]
         upper = stack[-1][0]
-        #if element == 'p':
-        #    dprint('        | exit p ', stack, fragments, upper)
-        #if element == 'li':
-        #    if '<p>' not in fragments[2:]:
-        #        pass
-                #fragments = fragments[2:-1]
         last = current[-1] if current else ''
         current += html_text(element, fragments, upper, last)
     return i
@@ -399,7 +396,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append((f'ul{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
-            stack.append(('p', [], i))
+            stack.append(('p_', [], i))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0][:2] != 'ol':
                 if len(stack) >= 2 and stack[-2][0][:2] == 'ol':
@@ -409,13 +406,15 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append((f'ol{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
-            stack.append(('p', [], i))
+            stack.append(('p_', [], i))
         elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
-        elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote'):
+        elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
             if md[ii] == '\\':
                 ii += 1
+            if stack[-1][0] == 'li':
+                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], '', ''), stack[-1][2])
             stack.append(('p', [], ii))
             return ii
         else:
@@ -513,7 +512,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
     stl = True
     skip = False
 
-    if stack[-1][0]  in ['fenced', 'p']:
+    if stack[-1][0]  in ['fenced', 'p', 'p_']:
         if stack[-1][1]:
             stack[-1][1].append('\n')
 
