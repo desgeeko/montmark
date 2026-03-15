@@ -191,7 +191,8 @@ def html_text(element: str, content, upper, last):
         element = ''
     elif element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
-        content.insert(0, '\n')
+        if last != '\n':
+            content.insert(0, '\n')
         content.append(f'\n</code></pre>')
         content.append('\n')
     elif element in ['em&strong']:
@@ -204,9 +205,13 @@ def html_text(element: str, content, upper, last):
         obj = []
         url = content[0].get("url")
         title = content[0].get("title")
-        obj.append(f'<{element} href="{url}"')
+        obj.append(f'<{element} href="')
+        obj.append(f'{url}')
+        obj.append(f'"')
         if title:
-            obj.append(f' title="{title}"')
+            obj.append(f' title="')
+            obj.append(f'{title}')
+            obj.append(f'"')
         obj.append(f'>{text}')
         obj.append(f'</{element}>')
         content = obj
@@ -224,7 +229,8 @@ def html_text(element: str, content, upper, last):
         content = obj
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
-        content.insert(0, '\n')
+        if last != '\n':
+            content.insert(0, '\n')
     elif element in ['br']:
         content[-1] = f'<{element} />'
     elif element in ['html']:
@@ -235,10 +241,10 @@ def html_text(element: str, content, upper, last):
         content.insert(0, f'<{element}>')
         if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
             content.insert(0, '\n')
-        if element[0] in ['b', 'u', 'o']:
+        if content[-1] != '\n' and element[0] in ['b', 'u', 'o']:
             content.append('\n')
         content.append(f'</{element}>')
-        if element[0] in ['u', 'o']:
+        if element[0] in ['u', 'o', 'p']:
             content.append('\n')
     return content
 
@@ -461,7 +467,8 @@ def close_element(md, tok, i, stack, offset):
     prev = stack.pop()
     current = stack[-1][1]
     if prev[0] != 'span':
-        current += html_text(prev[0], prev[1], '', '')
+        last = current[-1] if current else ''
+        current += html_text(prev[0], prev[1], '', last)
     else:
         url = prev[1][0][1:-1]
         current += html_text('a', [{'square': [url], 'url': url}], '', '')
@@ -580,6 +587,7 @@ def payload(md: str, start: int, stop: int, stack, refs) -> list:
                 x = 0
                 for _, accu, _ in stack:
                     x += len(accu)
+                rr['title'] = 'None'
                 refs.append((rr['link_id'], x+1))
             tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
@@ -661,7 +669,7 @@ def transform(md: str, start: int = 0) -> str:
         link_id = a
         l = links.get(link_id.upper(), ('', ''))
         all_fragments[j] = l[0]
-        all_fragments[j+2] = l[1]
+        all_fragments[j+3] = l[1]
     res = ''.join(all_fragments)
     return res
 
