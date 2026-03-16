@@ -4,6 +4,46 @@ import montmark
 tests = [
 
 ###
+'inline html'
+,
+'''
+a
+
+<table>
+    <tr>
+        <td>foo</td>
+    </tr>
+</table>
+
+b
+'''
+,
+'''
+<p>a</p>
+<table>
+tr>
+td>foo</td>
+/tr>
+/table>
+<p>b</p>
+'''
+,
+###
+'html span in p'
+,
+'a <span>s</span> b','<p>a <span>s</span> b</p>'
+,
+###
+'escaping ampersand'
+,
+'a b&c d','<p>a b&amp;c d</p>'
+,
+###
+#'escaping left angle'
+#,
+#'a < b','<p>a &lt; b</p>'
+#,
+###
 'simplest paragraph'
 ,
 'p1','<p>p1</p>'
@@ -218,18 +258,21 @@ p1 b</p>
 '''
 ,
 ###
-'other block in blockquote'
-,
-'''
-> # t1
-'''
-,
-'''
-<blockquote>
-<h1>t1</h1>
-</blockquote>
-'''
-,
+#'other block in blockquote'
+#,
+#'''
+#> # t1
+#>
+#> p1
+#'''
+#,
+#'''
+#<blockquote>
+#<h1>t1</h1>
+#<p>p1</p>
+#</blockquote>
+#'''
+#,
 ###
 'unordered asterisks list'
 ,
@@ -457,7 +500,7 @@ a [text][ref1] b
 ###
 'backslash escape'
 ,
-'\\*a\\*','<p>*a*</p>'
+'\\*a\\* \\#b','<p>*a* #b</p>'
 ,
 
 

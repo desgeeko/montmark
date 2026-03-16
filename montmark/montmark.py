@@ -30,7 +30,7 @@ import os
 DEBUG = os.getenv("DEBUG", "0") == "1"
 LINK_DEL = '@@@'
 
-patterns = ['*', '_', '`', '[', '<', '>', '&']
+patterns = ['*', '_', '`', '[', '<', '>', '&', '\\']
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
 regex = re.compile(spans)
@@ -188,7 +188,7 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content, upper, last):
     """Prepare html segments but keep them in a list for future join."""
-    if element == 'p_' and upper == 'li':
+    if element == 'span' or (element == 'p_' and upper == 'li'):
         element = ''
     elif element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
@@ -423,8 +423,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append(('html', [], i))
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
-            if md[ii] == '\\':
-                ii += 1
+            #if md[ii] == '\\':
+            #    ii += 1
             if stack[-1][0] == 'li':
                 stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], '', ''), stack[-1][2])
             stack.append(('p', [], ii))
@@ -472,12 +472,12 @@ def close_element(md, tok, i, stack, offset):
     stack[-1][1].append(md[tok:i-offset+1])
     prev = stack.pop()
     current = stack[-1][1]
-    if prev[0] != 'span':
-        last = current[-1] if current else ''
-        current += html_text(prev[0], prev[1], '', last)
-    else:
+    if prev[0] == 'span' and len(prev[1][0]) > 5 and prev[1][0][1:5] == 'http':
         url = prev[1][0][1:-1]
         current += html_text('a', [{'square': [url], 'url': url}], '', '')
+    else:
+        last = current[-1] if current else ''
+        current += html_text(prev[0], prev[1], '', last)
     tok = i + offset
     return tok
 
@@ -524,6 +524,7 @@ def payload(md: str, start: int, stop: int, stack) -> list:
     tok, seq, w = i, '', 0
     stl = True
     skip = False
+    found_bs = False
 
     if stack[-1][0]  in ['fenced', 'p', 'p_']:
         if stack[-1][1]:
@@ -538,16 +539,17 @@ def payload(md: str, start: int, stop: int, stack) -> list:
         matches = []
     else:
         matches = regex.finditer(md, start, stop)
-
     for match in matches:
         i = match.start()
-        dprint('        | ', i, stack)
-        if i > 0 and md[i-1] == '\\':
-            stack[-1][1].append(md[tok:i-1])
-            tok = i
+        if found_bs and md[i] in '*#':
+            found_bs = False
             continue
-        #if stack[-1][0] == 'fenced':
-        #    break
+        dprint('        | ', i, md[i], stack)
+        if md[i] == '\\' and md[i+1] in '*#':
+            stack[-1][1].append(md[tok:i] + md[i+1])
+            tok = i+2
+            found_bs = True
+            continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
             tok -= 2
