@@ -39,10 +39,10 @@ td>foo</td>
 'a b&c d','<p>a b&amp;c d</p>'
 ,
 ###
-#'escaping left angle'
-#,
-#'a < b','<p>a &lt; b</p>'
-#,
+'escaping left angle'
+,
+'a < b','<p>a &lt; b</p>'
+,
 ###
 'simplest paragraph'
 ,
@@ -258,21 +258,21 @@ p1 b</p>
 '''
 ,
 ###
-#'other block in blockquote'
-#,
-#'''
-#> # t1
-#>
-#> p1
-#'''
-#,
-#'''
-#<blockquote>
-#<h1>t1</h1>
-#<p>p1</p>
-#</blockquote>
-#'''
-#,
+'other block in blockquote'
+,
+'''
+> # t1
+>
+> p1
+'''
+,
+'''
+<blockquote>
+<h1>t1</h1>
+<p>p1</p>
+</blockquote>
+'''
+,
 ###
 'unordered asterisks list'
 ,

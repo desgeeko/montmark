@@ -337,7 +337,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
         elif node[0] == 'h' and len(node) == 2:
             broken = True
-            i = start
+            #i = start
         elif node == 'html':
             if md[i] in '\r\n':
                 broken = True
@@ -518,6 +518,7 @@ def detect_link(md, i, stop):
 
 def payload(md: str, start: int, stop: int, stack) -> list:
     """Process spans in the content."""
+    BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
     if md[start] == '\n':
         return stop+1
     i = start
@@ -541,11 +542,11 @@ def payload(md: str, start: int, stop: int, stack) -> list:
         matches = regex.finditer(md, start, stop)
     for match in matches:
         i = match.start()
-        if found_bs and md[i] in '*#':
+        if found_bs and md[i] in BACKSLASH_ESCAPED:
             found_bs = False
             continue
         dprint('        | ', i, md[i], stack)
-        if md[i] == '\\' and md[i+1] in '*#':
+        if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED:
             stack[-1][1].append(md[tok:i] + md[i+1])
             tok = i+2
             found_bs = True
@@ -577,7 +578,7 @@ def payload(md: str, start: int, stop: int, stack) -> list:
         elif md[i:i+1] == '>' and stack[-1][0] == 'span':
             tok = close_element(md, tok, i, stack, 0)
             tok += 1
-        elif md[i:i+1] == '<':
+        elif md[i:i+1] == '<' and (md[i+1] > 'a' or md[i+1] == '/'):
             tok = open_element(md, tok, i-1, stack, 0, 'span')
         elif stack[-1][0] == 'html':
             break
@@ -598,6 +599,7 @@ def payload(md: str, start: int, stop: int, stack) -> list:
                 rr['title'] = ''
             tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
+            print('HERE')
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
@@ -667,13 +669,14 @@ def transform(md: str, start: int = 0) -> str:
         all_fragments = all_fragments[1:]
     dprint('fragments', all_fragments, '\n')
     dprint('links', links, '\n')
-    for i, x in enumerate(all_fragments):
-        if len(x) > 6 and x[:3] == LINK_DEL:
-            link_id = x[3:-3]
-            url, title = links.get(link_id.upper(), ('', ''))
-            all_fragments[i] = url
-            if title:
-                all_fragments[i+2] = f' title="{title}"'
+    if links:
+        for i, x in enumerate(all_fragments):
+            if len(x) > 6 and x[:3] == LINK_DEL:
+                link_id = x[3:-3]
+                url, title = links.get(link_id.upper(), ('', ''))
+                all_fragments[i] = url
+                if title:
+                    all_fragments[i+2] = f' title="{title}"'
     res = ''.join(all_fragments)
     return res
 
