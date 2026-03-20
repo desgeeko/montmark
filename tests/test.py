@@ -21,10 +21,10 @@ b
 '''
 <p>a</p>
 <table>
-tr>
-td>foo</td>
-/tr>
-/table>
+<tr>
+<td>foo</td>
+</tr>
+</table>
 <p>b</p>
 '''
 ,

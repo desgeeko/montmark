@@ -326,7 +326,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
             else:
-                #i = i0
                 broken = True
         elif node == 'fenced':
             if seq == '`' and w2 == 3:
@@ -337,12 +336,12 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
         elif node[0] == 'h' and len(node) == 2:
             broken = True
-            #i = start
         elif node == 'html':
             if md[i] in '\r\n':
                 broken = True
             else:
                 node_cursor += 1
+                i -= 1
         elif node == 'indented':
             broken = True
         elif node in ['hr']:
@@ -356,11 +355,19 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     if close:
         node_cursor = 1
     for _ in range(len(stack) - node_cursor):
-        element, fragments, _ = stack.pop()
-        current = stack[-1][1]
-        upper = stack[-1][0]
-        last = current[-1] if current else ''
-        current += html_text(element, fragments, upper, last)
+        element, fragments, rb = stack.pop()
+        if element in ['em']:
+            #dprint(f'        | {element} should be rolled back to rb={rb}')
+            #return rb
+            current = stack[-1][1]
+            upper = stack[-1][0]
+            last = current[-1] if current else ''
+            current += html_text(element, fragments, upper, last)
+        else:
+            current = stack[-1][1]
+            upper = stack[-1][0]
+            last = current[-1] if current else ''
+            current += html_text(element, fragments, upper, last)
     return i
 
 
@@ -423,8 +430,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append(('html', [], i))
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
-            #if md[ii] == '\\':
-            #    ii += 1
             if stack[-1][0] == 'li':
                 stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], '', ''), stack[-1][2])
             stack.append(('p', [], ii))
@@ -599,7 +604,6 @@ def payload(md: str, start: int, stop: int, stack) -> list:
                 rr['title'] = ''
             tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
-            print('HERE')
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
@@ -630,16 +634,27 @@ def transform(md: str, start: int = 0) -> str:
     stack = [('root', [], i)] #node, accu, checkpoints
     refs = []
     links = {}
-    while i < len(md):
+    phase = "in_context"
+
+    while True:
         eol = md.find("\n", i)
         eol = len(md) if eol == -1 else eol
-        dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])}')
+        dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])} {phase}')
         
-        phase = "in_context"
-        dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
-        i = context(md, i, eol, stack)
-        dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
-        phase = "in_structure" if i < eol else "fforward"
+        if phase == "in_context":
+            dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
+            before = i
+            i = context(md, i, eol, stack)
+            dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
+            phase = "in_structure"
+            if i < before:
+                #dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
+                #i += 2
+                #phase = "in_payload"
+                #continue
+                pass
+            else:
+                phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
             dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ')
@@ -649,7 +664,7 @@ def transform(md: str, start: int = 0) -> str:
                 i = eol
                 continue
             i = structure(md, i, eol, stack)
-            dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
+            dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
@@ -657,12 +672,18 @@ def transform(md: str, start: int = 0) -> str:
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack)
             dprint(f'        | => {r:2}')
+            phase = "in_context"
 
         i = eol+1
+        phase = "in_context"
 
-    dprint(f'{i:2} | ef | {".".join([x[0] for x in stack[0:]]):25} ')
-    _ = context('\n', 0, 0, stack, close=True)
-    dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
+        if i >= len(md):
+            dprint(f'{i:2} | ef | {".".join([x[0] for x in stack[0:]]):25} ')
+            _ = context('\n', 0, 0, stack, close=True)
+            dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
+            break
+
+
     all_fragments = stack[0][1]
     dprint('\n')
     if all_fragments[0] == '\n':
