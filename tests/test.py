@@ -502,7 +502,16 @@ a [text][ref1] b
 ,
 '\\*a\\* \\#b','<p>*a* #b</p>'
 ,
-
+###
+'unclosed span'
+,
+'a *b c','<p>a *b c</p>'
+,
+###
+'masked span ending'
+,
+'a *b `co* de` d','<p>a *b <code>co* de</code> d</p>'
+,
 
 ]
 

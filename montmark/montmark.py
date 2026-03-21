@@ -356,13 +356,9 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         node_cursor = 1
     for _ in range(len(stack) - node_cursor):
         element, fragments, rb = stack.pop()
-        if element in ['em']:
-            #dprint(f'        | {element} should be rolled back to rb={rb}')
-            #return rb
-            current = stack[-1][1]
-            upper = stack[-1][0]
-            last = current[-1] if current else ''
-            current += html_text(element, fragments, upper, last)
+        if element in ['em', 'strong']:
+            dprint(f'        | {element} should be rolled back to rb={rb}')
+            return rb
         else:
             current = stack[-1][1]
             upper = stack[-1][0]
@@ -521,20 +517,24 @@ def detect_link(md, i, stop):
     return res, i
 
 
-def payload(md: str, start: int, stop: int, stack) -> list:
+def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
     BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
     if md[start] == '\n':
         return stop+1
     i = start
-    tok, seq, w = i, '', 0
+    tok, seq, w = start, '', 0
     stl = True
     skip = False
     found_bs = False
 
-    if stack[-1][0]  in ['fenced', 'p', 'p_']:
+    if stack[-1][0]  in ['fenced', 'p', 'p_'] and offset == 0:
         if stack[-1][1]:
             stack[-1][1].append('\n')
+
+    if offset == 1:
+        i += 1
+        start += 1
 
     if stack[-1][0] == 'html':
         stack[-1][1].append(md[start:stop])
@@ -635,6 +635,7 @@ def transform(md: str, start: int = 0) -> str:
     refs = []
     links = {}
     phase = "in_context"
+    skip = 0
 
     while True:
         eol = md.find("\n", i)
@@ -648,11 +649,10 @@ def transform(md: str, start: int = 0) -> str:
             dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
-                #dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
-                #i += 2
-                #phase = "in_payload"
-                #continue
-                pass
+                dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
+                skip = 1
+                phase = "in_payload"
+                continue
             else:
                 phase = "in_structure" if i < eol else "fforward"
 
@@ -670,7 +670,8 @@ def transform(md: str, start: int = 0) -> str:
         if phase == "in_payload":
             dprint(f'{i:2} | _p | {" ":25} ')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
-            payload(md, i, r, stack)
+            payload(md, i, r, stack, skip)
+            skip = 0
             dprint(f'        | => {r:2}')
             phase = "in_context"
 
@@ -679,10 +680,15 @@ def transform(md: str, start: int = 0) -> str:
 
         if i >= len(md):
             dprint(f'{i:2} | ef | {".".join([x[0] for x in stack[0:]]):25} ')
-            _ = context('\n', 0, 0, stack, close=True)
+            before = i
+            i = context('\n', i, eol, stack, close=True)
+            if i < before:
+                dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
+                skip = 1
+                phase = "in_payload"
+                continue
             dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
             break
-
 
     all_fragments = stack[0][1]
     dprint('\n')
