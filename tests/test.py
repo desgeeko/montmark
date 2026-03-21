@@ -430,6 +430,22 @@ a
 '''
 ,
 ###
+'header after list'
+,
+'''
+- i1
+
+# t1
+'''
+,
+'''
+<ul>
+<li>i1</li>
+</ul>
+<h1>t1</h1>
+'''
+,
+###
 'code block'
 ,
 '''
@@ -511,9 +527,19 @@ a [text][ref1] b
 '![alt](url)','<p><img src="url" alt="alt" /></p>'
 ,
 ###
-'automatic link'
+'automatic link in p'
 ,
 'a <https://url> b','<p>a <a href="https://url">https://url</a> b</p>'
+,
+###
+'isolated automatic link'
+,
+'''
+<https://url>
+''',
+'''
+<p><a href="https://url">https://url</a></p>
+'''
 ,
 ###
 'backslash escape'

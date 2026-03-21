@@ -314,7 +314,10 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif len(node) > 2 and node[:2] in ['ul', 'ol']:
-            if md[i] in '>' or seq == '#':
+            if md[i] in '>':
+                broken = True
+            elif seq == '#':
+                i = ii
                 broken = True
             else:
                 node_cursor += 1
@@ -422,7 +425,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack.append((f'ol{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
             stack.append(('p_', [], i))
-        elif md[i] == '<' and not sp_or_tabs and stack[-1][0] != 'html':
+        elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] != 'http' and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
