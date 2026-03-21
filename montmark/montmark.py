@@ -322,7 +322,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
-            elif node_cursor == len(stack) - 2:
+            elif node_cursor == len(stack) - 2 and md[ii] not in '\n':
                 node_cursor += 1
                 i -= 1
             else:

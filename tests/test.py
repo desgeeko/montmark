@@ -274,6 +274,24 @@ p1 b</p>
 '''
 ,
 ###
+'consecutive blockquotes'
+,
+'''
+> b1
+
+> b2
+'''
+,
+'''
+<blockquote>
+<p>b1</p>
+</blockquote>
+<blockquote>
+<p>b2</p>
+</blockquote>
+'''
+,
+###
 'unordered asterisks list'
 ,
 '''
