@@ -335,7 +335,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 broken = True
                 i = stop
             else:
-                i = i0
+                i = i0 - 1
                 node_cursor += 1
         elif node[0] == 'h' and len(node) == 2:
             broken = True
@@ -360,7 +360,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     for _ in range(len(stack) - node_cursor):
         element, fragments, rb = stack.pop()
         if element in ['em', 'strong']:
-            dprint(f'        | {element} should be rolled back to rb={rb}')
+            dprint(f'        | {element} should be rolled back to rb={rb} stack={stack}')
             return rb
         else:
             current = stack[-1][1]
@@ -576,7 +576,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif stl and i > 1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 3, 'em')
             tok = open_element(md, tok, i, stack, 3, 'strong')
-        elif stl and i > 0 and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
+        elif stl and i > start and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 2, 'strong')
         elif stl and md[i] in ['*', '_'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 1, 'em')

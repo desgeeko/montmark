@@ -547,14 +547,35 @@ a [text][ref1] b
 '\\*a\\* \\#b','<p>*a* #b</p>'
 ,
 ###
-'unclosed span'
+'unclosed em span'
 ,
 'a *b c','<p>a *b c</p>'
+,
+###
+'unclosed strong span'
+,
+'a **b c','<p>a **b c</p>'
 ,
 ###
 'masked span ending'
 ,
 'a *b `co* de` d','<p>a *b <code>co* de</code> d</p>'
+,
+###
+'fenced code block'
+,
+'''
+```
+abc
+  def
+```
+'''
+,
+'''
+<pre><code>abc
+  def
+</code></pre>
+'''
 ,
 
 ]
