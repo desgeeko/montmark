@@ -561,6 +561,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
+            tok = close_element(md, tok, i, stack, 3)
             tok -= 2
         elif stl and i > 0 and md[i-1:i+1] in ['**','__'] and md[i+1] != md[i] and stack[-1][0] in ('strong', 'em'):
             tok = close_element(md, tok, i, stack, 2)
@@ -573,7 +574,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif md[i:i+1] == '`' and stack[-1][0] == 'code':
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif stl and i > 1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
+        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 3, 'em')
             tok = open_element(md, tok, i, stack, 3, 'strong')
         elif stl and i > start and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
@@ -675,7 +676,7 @@ def transform(md: str, start: int = 0) -> str:
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, skip)
             skip = 0
-            dprint(f'        | => {r:2}')
+            dprint(f'        | => {r:2} stack={stack}')
             phase = "in_context"
 
         i = eol+1

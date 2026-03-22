@@ -517,6 +517,11 @@ a [text][ref1] b
 'a **b c** d','<p>a <strong>b c</strong> d</p>'
 ,
 ###
+'em and strong'
+,
+'a ***b c*** d','<p>a <em><strong>b c</strong></em> d</p>'
+,
+###
 'code span'
 ,
 'b `c` d','<p>b <code>c</code> d</p>'
@@ -555,6 +560,11 @@ a [text][ref1] b
 'unclosed strong span'
 ,
 'a **b c','<p>a **b c</p>'
+,
+###
+'unclosed em and strong span'
+,
+'a ***b** c','<p>a *<strong>b</strong> c</p>'
 ,
 ###
 'masked span ending'
