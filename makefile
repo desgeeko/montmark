@@ -7,7 +7,7 @@ $(SPEC):
 	wget -P $(TST_DIR) https://spec.commonmark.org/0.31.2/spec.json
 
 cmark: $(SPEC)
-	echo TODO
+	PYTHONPATH=. python3 tests/cmark.py
 
 test:
 	python3 -m unittest tests/test.py -v

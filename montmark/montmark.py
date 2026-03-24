@@ -696,7 +696,7 @@ def transform(md: str, start: int = 0) -> str:
 
     all_fragments = stack[0][1]
     dprint('\n')
-    if all_fragments[0] == '\n':
+    if all_fragments and all_fragments[0] == '\n':
         all_fragments = all_fragments[1:]
     dprint('fragments', all_fragments, '\n')
     dprint('links', links, '\n')
