@@ -346,7 +346,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif node == 'indented':
-            broken = True
+            if  w<4:
+                broken = True
+            else:
+                node_cursor += 1
+                i -= 1
         elif node in ['hr']:
             broken = True
 
@@ -531,7 +535,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     skip = False
     found_bs = False
 
-    if stack[-1][0]  in ['fenced', 'p', 'p_'] and offset == 0:
+    if stack[-1][0]  in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
         if stack[-1][1]:
             stack[-1][1].append('\n')
 
@@ -698,6 +702,8 @@ def transform(md: str, start: int = 0) -> str:
     dprint('\n')
     if all_fragments and all_fragments[0] == '\n':
         all_fragments = all_fragments[1:]
+    if all_fragments and all_fragments[-1] != '\n':
+        all_fragments.append('\n')
     dprint('fragments', all_fragments, '\n')
     dprint('links', links, '\n')
     if links:

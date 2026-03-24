@@ -461,6 +461,23 @@ p1
 '''
 ,
 ###
+'multi line code block'
+,
+'''
+p1
+
+    c1
+    c2
+'''
+,
+'''
+<p>p1</p>
+<pre><code>c1
+c2
+</code></pre>
+'''
+,
+###
 'horizontal rule'
 ,
 '''
