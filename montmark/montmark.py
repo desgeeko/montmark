@@ -30,7 +30,7 @@ import os
 DEBUG = os.getenv("DEBUG", "0") == "1"
 LINK_DEL = '@@@'
 
-patterns = ['*', '_', '`', '[', '<', '>', '&', '\\']
+patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
 regex = re.compile(spans)
@@ -132,13 +132,13 @@ def check_hr(md: str, start = 0):
         if not toks:
             if md[i] in '*_-':
                 toks = md[i]
-            elif md[i] == ' ':
+            elif md[i] in ' \t':
                 pass
             else:
                 return False, -1
             i += 1
             continue
-        if md[i] != ' ' and md[i] != toks[0]:
+        if md[i] not in ' \t' and md[i] != toks[0]:
             return False, -1
         elif md[i] in toks:
             toks += md[i]
@@ -146,8 +146,6 @@ def check_hr(md: str, start = 0):
             pass
         i += 1
     res = True if len(toks) >= 3 else False
-    #c = md.find('\n', i)
-    #eol = c if c != -1 else len(md)
     return res, eol
 
 
@@ -179,7 +177,7 @@ def prefix(md: str, start: int = 0) -> tuple:
             w += 1
         elif seq == '#' and md[i] == '#':
             w += 1
-        elif seq == '`' and md[i] == '`':
+        elif seq in '`~' and md[i] in '`~':
             w += 1
         else:
             return start, i, seq, w
@@ -331,7 +329,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 broken = True
         elif node == 'fenced':
-            if seq == '`' and w2 == 3:
+            if seq in '`~' and w2 == 3:
                 broken = True
                 i = stop
             else:
@@ -363,7 +361,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         node_cursor = 1
     for _ in range(len(stack) - node_cursor):
         element, fragments, rb = stack.pop()
-        if element in ['em', 'strong']:
+        if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb} stack={stack}')
             return rb
         else:
@@ -393,7 +391,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if seq  == '`' and w2 == 3:
+        if seq in '`~' and w2 == 3:
             stack.append(('fenced', [], i))
             i = stop
             return i
@@ -405,7 +403,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif sp_or_tabs and w >= 4:
             stack.append(('indented', [], i))
             return i
-        elif seq  == '#' and md[i] == ' ' and w2 <= 6:
+        elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
             stack.append((f'h{w2}', [], i))
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
@@ -429,7 +427,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack.append((f'ol{offset+ix-i0}', [], i))
             stack.append(('li', [], i))
             stack.append(('p_', [], i))
-        elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] != 'http' and stack[-1][0] != 'html':
+        elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] not in ['http'] and stack[-1][0] != 'html':
             stack.append(('html', [], i))
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
@@ -442,29 +440,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
 
         i += 1
     return i
-
-
-#def payload_other(md: str, start: int, stop: int, stack) -> list:
-#    """Process spans in the content."""
-#
-#    patterns = ['*', '_', '`', '[']
-#
-#    if md[start] == '\n':
-#        return start+1
-#    i = start
-#    tok, seq, w = i, '', 0
-#    matches = regex.finditer(md, i, stop)
-#    while i < stop:
-#
-#        if md[i] not in patterns:
-#            continue
-#        
-#        TODO
-#
-#        i += 1
-#
-#    stack[-1][1].append(md[tok:stop])
-#    return stop+1
 
 
 def open_element(md, tok, i, stack, offset, element):
@@ -490,11 +465,19 @@ def close_element(md, tok, i, stack, offset):
     return tok
 
 
+def basic_entity_substitution(c):
+    """Simple entity substitution for single character."""
+    HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}
+    if c in HE:
+        return HE[c]
+    else:
+        return c
+
+
 def html_entity(md, tok, i, stack):
     """Turn special chars into HTML entities."""
     stack[-1][1].append(md[tok:i])
-    HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;'}
-    stack[-1][1].append(HE[md[i]])
+    stack[-1][1].append(basic_entity_substitution(md[i]))
     tok = i + 1
     return tok
 
@@ -524,9 +507,33 @@ def detect_link(md, i, stop):
     return res, i
 
 
+#def payload_other(md: str, start: int, stop: int, stack) -> list:
+#    """Process spans in the content."""
+#
+#    patterns = ['*', '_', '`', '[']
+#
+#    if md[start] == '\n':
+#        return start+1
+#    i = start
+#    tok, seq, w = i, '', 0
+#    matches = regex.finditer(md, i, stop)
+#    while i < stop:
+#
+#        if md[i] not in patterns:
+#            continue
+#        
+#        TODO
+#
+#        i += 1
+#
+#    stack[-1][1].append(md[tok:stop])
+#    return stop+1
+
+
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
-    BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
+    #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
+    BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!"$%&\',/:;<=>?@^|~\\'
     if md[start] == '\n':
         return stop+1
     i = start
@@ -534,6 +541,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     stl = True
     skip = False
     found_bs = False
+    prev_i = -2
 
     if stack[-1][0]  in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
         if stack[-1][1]:
@@ -554,14 +562,14 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         matches = regex.finditer(md, start, stop)
     for match in matches:
         i = match.start()
-        if found_bs and md[i] in BACKSLASH_ESCAPED:
-            found_bs = False
-            continue
         dprint('        | ', i, md[i], stack)
-        if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED:
-            stack[-1][1].append(md[tok:i] + md[i+1])
+        if i == prev_i+1:
+            continue
+        if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code']:
+            stack[-1][1].append(md[tok:i] + basic_entity_substitution(md[i+1]))
             tok = i+2
             found_bs = True
+            prev_i = i
             continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
