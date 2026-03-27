@@ -339,6 +339,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         elif node in ['hr']:
             broken = True
         elif node[0] == 'h' and len(node) == 2:
+            i = i0
             broken = True
         elif node == 'html':
             if md[i] in '\r\n':
@@ -403,9 +404,10 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             return i
         elif sp_or_tabs and w >= 4:
             stack.append(('indented', [], i))
-            return i
+            return ii
         elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
             stack.append((f'h{w2}', [], i))
+            return i+1
         elif md[i] == '>':
             stack.append(('blockquote', [], i))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
@@ -628,7 +630,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     last_elt = stack[-1][0]
     last_content = stack[-1][1]
     if last_elt[0]  == 'h':
-        last_content.append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' '))
+        last_content.append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' ').lstrip(' '))
     else:
         last_content.append(md[tok:stop])
 
