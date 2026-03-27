@@ -259,21 +259,22 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     i = start
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
+
     if len(stack) == 1:
         return i
 
+    hr, eol = check_hr(md, i)
     setext, eol = check_setext(md, i)
+
     if setext:
         if stack[-1][0] in ['p', 'p_']:
             elt = 'h1' if setext == '=' else 'h2'
+            if stack[-1][1][-1] == '<br />':
+                stack[-1][1].pop()
             stack[-1] = (elt, stack[-1][1], stack[-1][2])
-        return eol
+            return eol
 
-    hr, eol = check_hr(md, i)
-    if hr:
-        return eol
-    
-    while i < len(md) and not hr and not close:
+    while i < len(md) and not close:
         node = stack[node_cursor][0]
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
@@ -281,7 +282,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node in ['p', 'p_']:
-            if md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if hr or md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
                 broken = True
                 i = i0
             elif md[i] in '-.':
@@ -335,6 +336,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 i = i0 - 1
                 node_cursor += 1
+        elif node in ['hr']:
+            broken = True
         elif node[0] == 'h' and len(node) == 2:
             broken = True
         elif node == 'html':
@@ -349,8 +352,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 node_cursor += 1
                 i -= 1
-        elif node in ['hr']:
-            broken = True
 
         if broken:
             break
@@ -630,8 +631,13 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         last_content.append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' '))
     else:
         last_content.append(md[tok:stop])
+
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
+        stack.append(('br', [''], 0))
+        close_element(md, 0, 0, stack, 0)
+    if last_elt[0]  == 'p' and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
+        last_content[-1] = last_content[-1].rstrip('\\')
         stack.append(('br', [''], 0))
         close_element(md, 0, 0, stack, 0)
     return stop+1
