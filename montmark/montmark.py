@@ -36,20 +36,58 @@ spans = '|'.join(escaped)
 regex = re.compile(spans)
 
 
-def str_between_spaces_tabs_nls(md: str, start: int, stop: int):
-    """Skip spaces, tabs, newlines, and return following sequence."""
+def extract_title(md: str, start: int, stop: int):
+    """Search for title in link definition."""
+    MATCHING = {'"': '"', "'": "'", "(": ")"}
     res = ''
     i = start
+    first_char = ''
+    nl = False
     while i < stop:
-        if not res and md[i] in ' \t\n':
-            i += 1
-            continue
-        if md[i] not in ' \t\n':
-            res += md[i]
+        if not first_char:
+            if md[i] in MATCHING:
+                first_char = md[i]
+                res = first_char
+            elif md[i] == '\n' and nl:
+                    return '', i
         else:
-            break
+            if md[i] == '\n' and nl:
+                    return res, i
+            elif md[i] == MATCHING[first_char]:
+                return (res[1:], i)
+            else:
+                res += md[i]
+        nl = True if md[i] == '\n' else False
         i += 1
     return res, i
+
+
+def extract_destination(md: str, start: int, stop: int):
+    """Search for link destination in link_definition."""
+    res = ''
+    i = start
+    first_char = ''
+    nl = False
+    while i < stop:
+        if not first_char:
+            if md[i] not in ' \t\n':
+                first_char = md[i]
+                res = first_char
+            elif md[i] == '\n' and nl:
+                    return '', i+1
+        elif first_char == '<':
+            if md[i] == '>':
+                return (res + '>', i+1)
+            else:
+                res += md[i]
+        else:
+            if md[i] in ' \n':
+                return (res, i)
+            else:
+                res += md[i]
+        nl = True if md[i] == '\n' else False
+        i += 1
+    return res, i+1
 
 
 def check_link_id(md: str, start = 0):
@@ -57,6 +95,8 @@ def check_link_id(md: str, start = 0):
     url = ''
     title = ''
     i = start
+    if i >= len(md):
+        return False, False, False, -1
     if md[i] not in ' [':
         return False, False, False, -1
     c = md.find('[', i, i+4)
@@ -73,26 +113,17 @@ def check_link_id(md: str, start = 0):
     if md[i] != ':':
         return False, False, False, -1
     i += 1
-    if md[i] not in ' \t\n':
+
+    url, i = extract_destination(md, i, len(md))
+    if not url:
         return False, False, False, -1
-    c = md.find('\n', i)
-    c = md.find('\n', c+1)
-    eol = c if c != -1 else len(md)
-    url, i = str_between_spaces_tabs_nls(md, i, eol)
-    if url and url[0] == '<' and url[-1] == '>':
+    if url[0] == '<' and url[-1] == '>':
         url = url[1:-1]
+
+    title, i = extract_title(md, i, len(md))
+
     c = md.find('\n', i)
-    c = md.find('\n', c+1)
     eol = c if c != -1 else len(md)
-    title, i = str_between_spaces_tabs_nls(md, i, eol)
-    c = md.find('\n', i)
-    eol = c if c != -1 else len(md)
-    if title and title[0] in '"(' and title[-1] in '")':
-        title = title[1:-1]
-    elif title:
-        return False, False, False, -1
-    else:
-        pass
     return (link_id, url, title, eol)
 
 
@@ -507,6 +538,8 @@ def detect_link(md, i, stop):
         else:
             res['link_id'] = res['square'][1]
         i = eob + 1
+    else:
+        res['link_id'] = res['square'][1]
     return res, i
 
 
@@ -682,10 +715,10 @@ def transform(md: str, start: int = 0) -> str:
 
         if phase == "in_structure":
             dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ')
-            link_id, url, title, _ = check_link_id(md, i)
+            link_id, url, title, eoli = check_link_id(md, i)
             if link_id:
                 links[link_id.upper()] = (url, title)
-                i = eol
+                i = eoli
                 continue
             i = structure(md, i, eol, stack)
             dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
