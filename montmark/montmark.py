@@ -49,10 +49,10 @@ def extract_title(md: str, start: int, stop: int):
                 first_char = md[i]
                 res = first_char
             elif md[i] == '\n' and nl:
-                    return '', i
+                return '', i
         else:
             if md[i] == '\n' and nl:
-                    return res, i
+                return res, i
             elif md[i] == MATCHING[first_char]:
                 return (res[1:], i)
             else:
@@ -215,19 +215,15 @@ def prefix(md: str, start: int = 0) -> tuple:
         i += 1
 
 
-def html_text(element: str, content, upper, last):
+def html_text(element: str, content, last):
     """Prepare html segments but keep them in a list for future join."""
-    if element == 'span' or (element == 'p_' and upper == 'li'):
+    if element == 'span' or element == 'p_':
         element = ''
     elif element in ['fenced', 'indented']:
         content.insert(0, f'<pre><code>')
         if last != '\n':
             content.insert(0, '\n')
         content.append(f'\n</code></pre>')
-        content.append('\n')
-    elif element in ['em&strong']:
-        content.insert(0, f'<{element}>')
-        content.append(f'</{element}>')
         content.append('\n')
     elif element in ['a']:
         text = content[0]['square'][-1]
@@ -255,6 +251,7 @@ def html_text(element: str, content, upper, last):
         alt = content[0]['square'][-1]
         obj = []
         url = content[0].get("url")
+        link_id = content[0].get("link_id")
         title = content[0].get("title")
         obj.append(f'<{element} src="{url}"')
         obj.append(f' alt="{alt}"')
@@ -399,9 +396,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             return rb
         else:
             current = stack[-1][1]
-            upper = stack[-1][0]
             last = current[-1] if current else ''
-            current += html_text(element, fragments, upper, last)
+            current += html_text(element, fragments, last)
     return i
 
 
@@ -466,7 +462,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
             if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], '', ''), stack[-1][2])
+                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], ''), stack[-1][2])
             stack.append(('p', [], ii))
             return ii
         else:
@@ -491,10 +487,10 @@ def close_element(md, tok, i, stack, offset):
     current = stack[-1][1]
     if prev[0] == 'span' and len(prev[1][0]) > 5 and prev[1][0][1:5] == 'http':
         url = prev[1][0][1:-1]
-        current += html_text('a', [{'square': [url], 'url': url}], '', '')
+        current += html_text('a', [{'square': [url], 'url': url}], '')
     else:
         last = current[-1] if current else ''
-        current += html_text(prev[0], prev[1], '', last)
+        current += html_text(prev[0], prev[1], last)
     tok = i + offset
     return tok
 
@@ -650,9 +646,6 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 stack.append(('a', [rr], i))
             if 'link_id' in rr:
                 skip = True
-                x = 0
-                for _, accu, _ in stack:
-                    x += len(accu)
                 rr['title'] = ''
             tok = close_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
@@ -689,7 +682,6 @@ def transform(md: str, start: int = 0) -> str:
     res = ''
     i = start
     stack = [('root', [], i)] #node, accu, checkpoints
-    refs = []
     links = {}
     phase = "in_context"
     skip = 0
@@ -748,16 +740,17 @@ def transform(md: str, start: int = 0) -> str:
             break
 
     all_fragments = stack[0][1]
-    dprint('\n')
+
     if all_fragments and all_fragments[0] == '\n':
         all_fragments = all_fragments[1:]
     if all_fragments and all_fragments[-1] != '\n':
         all_fragments.append('\n')
-    dprint('fragments', all_fragments, '\n')
-    dprint('links', links, '\n')
+    dprint('\n', 'fragments', all_fragments)
+    dprint(' links', links)
+
     if links:
         for i, x in enumerate(all_fragments):
-            if len(x) > 6 and x[:3] == LINK_DEL:
+           if len(x) > 6 and x[:3] == LINK_DEL:
                 link_id = x[3:-3]
                 url, title = links.get(link_id.upper(), ('', ''))
                 all_fragments[i] = url
