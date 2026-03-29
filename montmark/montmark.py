@@ -28,7 +28,6 @@ import os
 
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
-LINK_DEL = '@@@'
 
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -227,25 +226,12 @@ def html_text(element: str, content, last):
         content.append('\n')
     elif element in ['a']:
         text = content[0]['square'][-1]
-        obj = []
         url = content[0].get("url")
         link_id = content[0].get("link_id")
         title = content[0].get("title", '')
-        obj.append(f'<{element} href="')
-        if link_id:
-            obj.append(f'{LINK_DEL}{link_id}{LINK_DEL}')
-        else:
-            obj.append(f'{url}')
-        obj.append(f'"')
-        if title:
-            obj.append(f' title="')
-            obj.append(f'{title}')
-            obj.append(f'"')
-        else:
-            obj.append(f'')
-        obj.append(f'>{text}')
-        obj.append(f'</{element}>')
-        content = obj
+        title_attr = f' title="{title}"' if title else ''
+        html = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
+        content = [html]
     elif element in ['img']:
         title = f' title="{content["title"]}"' if 'title' in content else ''
         alt = content[0]['square'][-1]
@@ -495,6 +481,16 @@ def close_element(md, tok, i, stack, offset):
     return tok
 
 
+def keep_element(md, tok, i, stack, offset):
+    """."""
+    #stack[-1][1].append(md[tok:i-offset+1]) TODO archive
+    prev = stack.pop()
+    current = stack[-1][1]
+    current += [prev]
+    tok = i + offset
+    return tok
+
+
 def basic_entity_substitution(c):
     """Simple entity substitution for single character."""
     HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}
@@ -647,7 +643,8 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             if 'link_id' in rr:
                 skip = True
                 rr['title'] = ''
-            tok = close_element(md, tok, i-1, stack, 1)
+            #tok = close_element(md, tok, i-1, stack, 1)
+            tok = keep_element(md, tok, i-1, stack, 1)
         elif md[i:i+1] in '<>&':
             tok = html_entity(md, tok, i, stack)
         else:
@@ -746,16 +743,19 @@ def transform(md: str, start: int = 0) -> str:
     if all_fragments and all_fragments[-1] != '\n':
         all_fragments.append('\n')
     dprint('\n', 'fragments', all_fragments)
-    dprint(' links', links)
+    dprint(' links', links, '\n')
+    
+    for j in range(len(all_fragments)-1, -1, -1):
+        x = all_fragments[j]
+        if type(x) == tuple:
+            obj = x[1][0]
+            if 'link_id' in obj:
+                link_id = obj['link_id']
+                obj['url'], obj['title'] = links.get(link_id.upper(), ('', ''))
+            all_fragments.pop(j)
+            link = html_text(x[0], x[1], '')
+            all_fragments[j:j] = link
 
-    if links:
-        for i, x in enumerate(all_fragments):
-           if len(x) > 6 and x[:3] == LINK_DEL:
-                link_id = x[3:-3]
-                url, title = links.get(link_id.upper(), ('', ''))
-                all_fragments[i] = url
-                if title:
-                    all_fragments[i+2] = f' title="{title}"'
     res = ''.join(all_fragments)
     return res
 
