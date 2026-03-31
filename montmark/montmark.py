@@ -25,6 +25,7 @@ SOFTWARE.
 import argparse
 import re
 import os
+from urllib.parse import quote
 
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
@@ -51,7 +52,7 @@ def extract_title(md: str, start: int, stop: int):
                 return '', i
         else:
             if md[i] == '\n' and nl:
-                return res, i
+                return None
             elif md[i] == MATCHING[first_char]:
                 return (res[1:], i)
             else:
@@ -119,7 +120,10 @@ def check_link_id(md: str, start = 0):
     if url[0] == '<' and url[-1] == '>':
         url = url[1:-1]
 
-    title, i = extract_title(md, i, len(md))
+    ret = extract_title(md, i, len(md))
+    if ret is None:
+        return False, False, False, -1
+    title, i = ret
 
     c = md.find('\n', i)
     eol = c if c != -1 else len(md)
@@ -224,27 +228,18 @@ def html_text(element: str, content, last):
             content.insert(0, '\n')
         content.append(f'\n</code></pre>')
         content.append('\n')
-    elif element in ['a']:
+    elif element in ['a', 'img']:
         text = content[0]['square'][-1]
         url = content[0].get("url")
+        url = quote(url)
         link_id = content[0].get("link_id")
         title = content[0].get("title", '')
         title_attr = f' title="{title}"' if title else ''
-        html = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
+        if element == 'a':
+            html = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
+        else:
+            html = f'<{element} src="{url}" alt="{text}"{title_attr} />'
         content = [html]
-    elif element in ['img']:
-        title = f' title="{content["title"]}"' if 'title' in content else ''
-        alt = content[0]['square'][-1]
-        obj = []
-        url = content[0].get("url")
-        link_id = content[0].get("link_id")
-        title = content[0].get("title")
-        obj.append(f'<{element} src="{url}"')
-        obj.append(f' alt="{alt}"')
-        if title:
-            obj.append(f' title="{title}"')
-        obj.append(f' />')
-        content = obj
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
         if last != '\n':
@@ -378,7 +373,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     for _ in range(len(stack) - node_cursor):
         element, fragments, rb = stack.pop()
         if element in ['em', 'strong', 'code']:
-            dprint(f'        | {element} should be rolled back to rb={rb} stack={stack}')
+            dprint(f'        | {element} should be rolled back to rb={rb}')
             return rb
         else:
             current = stack[-1][1]
@@ -519,7 +514,12 @@ def detect_link(md, i, stop):
         eop = md.find(')', i+1, stop)
         boq = md.find('"', i+1, eop)
         u = eop if boq == -1 else boq-1
-        res['url'] = md[i+1:u]
+        url = md[i+1:u]
+        if len(url) >= 2 and url[0] == '<' and url[-1] == '>':
+            url = url[1:-1]
+        if '\n' in url:
+            return None, i
+        res['url'] = url
         res['title'] = md[u+2:eop-1]
         i = eop + 1
     elif md[i] == '[':
@@ -533,29 +533,6 @@ def detect_link(md, i, stop):
     else:
         res['link_id'] = res['square'][1]
     return res, i
-
-
-#def payload_other(md: str, start: int, stop: int, stack) -> list:
-#    """Process spans in the content."""
-#
-#    patterns = ['*', '_', '`', '[']
-#
-#    if md[start] == '\n':
-#        return start+1
-#    i = start
-#    tok, seq, w = i, '', 0
-#    matches = regex.finditer(md, i, stop)
-#    while i < stop:
-#
-#        if md[i] not in patterns:
-#            continue
-#        
-#        TODO
-#
-#        i += 1
-#
-#    stack[-1][1].append(md[tok:stop])
-#    return stop+1
 
 
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
@@ -583,14 +560,29 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         stack[-1][1].append(md[start:stop])
         stack[-1][1].append('\n')
         return stop+1
-    
-    if stack[-1][0] == 'fenced':
-        matches = []
-    else:
+
+    matches = []
+    markers = []
+    if stack[-1][0] != 'fenced':
         matches = regex.finditer(md, start, stop)
     for match in matches:
-        i = match.start()
-        dprint('        | ', i, md[i], stack)
+        markers.append(match.start())
+
+    #if stack[-1][0] == 'fenced':
+    #    markers = []
+    #else:
+    #    j = start
+    #    markers = []
+    #    while j < stop:
+    #        if md[j] in patterns:
+    #            markers.append(j)
+    #        j += 1
+
+    for i in markers:
+
+        dprint('        | ', i, md[i])
+        if i < tok:
+            continue
         if i == prev_i+1:
             continue
         if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code']:
@@ -632,19 +624,28 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif stack[-1][0] == 'html':
             break
         elif md[i:i+1] == '[' and not skip:
+            i0 = i
             if i > 0 and md[i-1] == '!':
                 stack[-1][1].append(md[tok:i-1])
                 rr, i = detect_link(md, i+1, stop)
-                stack.append(('img', [rr], i))
+                if rr is not None:
+                    rr['original'] = md[i0-1:i]
+                    stack.append(('img', [rr], i))
+                    tok = keep_element(md, tok, i-1, stack, 1)
+                else:
+                    i = i0
             else:
                 stack[-1][1].append(md[tok:i])
                 rr, i = detect_link(md, i+1, stop)
-                stack.append(('a', [rr], i))
-            if 'link_id' in rr:
-                skip = True
-                rr['title'] = ''
-            #tok = close_element(md, tok, i-1, stack, 1)
-            tok = keep_element(md, tok, i-1, stack, 1)
+                if rr is not None:
+                    rr['original'] = md[i0:i]
+                    stack.append(('a', [rr], i))
+                    if 'link_id' in rr:
+                        skip = True
+                        rr['title'] = ''
+                    tok = keep_element(md, tok, i-1, stack, 1)
+                else:
+                    i = i0-1
         elif md[i:i+1] in '<>&':
             tok = html_entity(md, tok, i, stack)
         else:
@@ -695,7 +696,7 @@ def transform(md: str, start: int = 0) -> str:
             dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
-                dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
+                dprint(f'        | ROLLBACK i={i} before={before}')
                 skip = 1
                 phase = "in_payload"
                 continue
@@ -703,12 +704,13 @@ def transform(md: str, start: int = 0) -> str:
                 phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
-            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25} ')
-            link_id, url, title, eoli = check_link_id(md, i)
-            if link_id:
-                links[link_id.upper()] = (url, title)
-                i = eoli
-                continue
+            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25}')
+            if stack[-1][0] != 'p':
+                link_id, url, title, eoli = check_link_id(md, i)
+                if link_id:
+                    links[link_id.upper()] = (url, title)
+                    i = eoli
+                    continue
             i = structure(md, i, eol, stack)
             dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
@@ -718,7 +720,7 @@ def transform(md: str, start: int = 0) -> str:
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, skip)
             skip = 0
-            dprint(f'        | => {r:2} stack={stack}')
+            dprint(f'        | => {r:2}')
             phase = "in_context"
 
         i = eol+1
@@ -729,7 +731,7 @@ def transform(md: str, start: int = 0) -> str:
             before = i
             i = context('\n', i, eol, stack, close=True)
             if i < before:
-                dprint(f'        | ROLLBACK i={i} before={before} stack={stack}')
+                dprint(f'        | ROLLBACK i={i} before={before}')
                 skip = 1
                 phase = "in_payload"
                 continue
@@ -751,9 +753,12 @@ def transform(md: str, start: int = 0) -> str:
             obj = x[1][0]
             if 'link_id' in obj:
                 link_id = obj['link_id']
-                obj['url'], obj['title'] = links.get(link_id.upper(), ('', ''))
+                obj['url'], obj['title'] = links.get(link_id.upper(), (None, ''))
             all_fragments.pop(j)
-            link = html_text(x[0], x[1], '')
+            if obj['url'] is not None:
+                link = html_text(x[0], x[1], '')
+            else:
+                link = [obj['original']]
             all_fragments[j:j] = link
 
     res = ''.join(all_fragments)
