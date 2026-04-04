@@ -25,10 +25,14 @@ SOFTWARE.
 import argparse
 import re
 import os
+import html
 from urllib.parse import quote
 
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
+
+MATCHING = {'"': '"', "'": "'", "(": ")"}
+BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!"$%&\',/:;<=>?@^|~\\'
 
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -36,9 +40,9 @@ spans = '|'.join(escaped)
 regex = re.compile(spans)
 
 
+
 def extract_title(md: str, start: int, stop: int):
     """Search for title in link definition."""
-    MATCHING = {'"': '"', "'": "'", "(": ")"}
     res = ''
     i = start
     first_char = ''
@@ -229,9 +233,8 @@ def html_text(element: str, content, last):
         content.append(f'\n</code></pre>')
         content.append('\n')
     elif element in ['a', 'img']:
-        text = content[0]['square'][-1]
+        text = content[0]['square']
         url = content[0].get("url")
-        url = quote(url)
         link_id = content[0].get("link_id")
         title = content[0].get("title", '')
         title_attr = f' title="{title}"' if title else ''
@@ -453,10 +456,11 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     return i
 
 
-def open_element(md, tok, i, stack, offset, element):
+def open_element(md, tok, i, stack, offset, element, init = None):
     """Flush segment and add new span element."""
     stack[-1][1].append(md[tok:i-offset+1])
-    stack.append((element, [], i-offset+1))
+    init = [] if init == None else init
+    stack.append((element, init, i-offset+1))
     tok = i + 1
     return tok
 
@@ -468,7 +472,7 @@ def close_element(md, tok, i, stack, offset):
     current = stack[-1][1]
     if prev[0] == 'span' and len(prev[1][0]) > 5 and prev[1][0][1:5] == 'http':
         url = prev[1][0][1:-1]
-        current += html_text('a', [{'square': [url], 'url': url}], '')
+        current += html_text('a', [{'square': url, 'url': url}], '')
     else:
         last = current[-1] if current else ''
         current += html_text(prev[0], prev[1], last)
@@ -503,42 +507,103 @@ def html_entity(md, tok, i, stack):
     return tok
 
 
-def detect_link(md, i, stop):
+def detect_link(md, start, stop):
     """Dedicated parsing of links."""
+    i = start
     res = {}
     tmp = [('tmp', [''], 0)]
-    eob = md.find(']', i, stop)
-    i = payload(md, i, eob, tmp)
-    res['square'] = tmp[0][1]
-    if md[i] == '(':
-        eop = md.find(')', i+1, stop)
-        boq = md.find('"', i+1, eop)
-        u = eop if boq == -1 else boq-1
-        url = md[i+1:u]
-        if len(url) >= 2 and url[0] == '<' and url[-1] == '>':
-            url = url[1:-1]
-        if '\n' in url:
-            return None, i
-        res['url'] = url
-        res['title'] = md[u+2:eop-1]
-        i = eop + 1
-    elif md[i] == '[':
-        eob = md.find(']', i+1, stop)
-        link_id = md[i+1:eob]
-        if link_id:
-            res['link_id'] = link_id
-        else:
-            res['link_id'] = res['square'][1]
-        i = eob + 1
-    else:
-        res['link_id'] = res['square'][1]
+    tmp_playload = tmp[0][1]
+    url_b = 0
+    url_e = 0
+    link_b = 0
+    title_b = 0
+    brackets = ''
+    title_m = ''
+    search = "SQUARE"
+    if i == stop:
+        return None, start
+    while i < stop:
+        if search == "SQUARE":
+            if md[i] == ']':
+                i = payload(md, start, i, tmp)
+                if md[i] == '(':
+                    res['square'] = tmp_playload[1]
+                    search = "URL"
+                elif md[i] == '[':
+                    res['square'] = tmp_playload[1]
+                    link_b = i+1
+                    search = "LINK"
+                else:
+                    res['square'] = tmp_playload[1]
+                    res['link_id'] = tmp_playload[1]
+                    return res, i
+        elif search == "LINK":
+            if md[i] == ']':
+                if link_b != i:
+                    res['link_id'] = md[link_b:i]
+                else:
+                    res['link_id'] = res['square']
+                i += 1
+                return res, i
+        elif search == "URL":
+            if not url_b and md[i] == '<':
+                brackets = '>'
+            if not url_b and md[i] in ')':
+                res['url'] = ''
+                search = "TITLE"
+            elif not url_b and md[i] not in ' \t':
+                url_b = i
+            elif brackets and url_b and md[i] in '>':
+                url = md[url_b+1:i]
+                if '\n' in url:
+                    return None, start
+                url = quote(url)
+                res['url'] = url
+                i += 1
+                search = "TITLE"
+            elif not brackets and url_b:
+                if md[i] in '"\'(' and md[i-1] not in ' \n':
+                    url_e = i
+                elif md[i] in ')"\'(':
+                    url = md[url_b:url_e+1]
+                    if ' ' in url:
+                        return None, start
+                    elif '\n' in url:
+                        return None, start
+                    url = quote(url)
+                    res['url'] = url
+                    i -= 1
+                    search = "TITLE"
+                elif md[i] not in ' \t':
+                    url_e = i
+        elif search == "TITLE":
+            dprint('TITLE', i, title_b)
+            if md[i] in ' \t':
+                pass
+            elif not title_b and md[i] == ')':
+                res['title'] = ''
+                return res, i+1
+            elif not title_b and md[i] in '"\'(':
+                dprint('INITTTT', i)
+                title_b = i+1
+                title_m = MATCHING[md[i]]
+            elif title_b and md[i] == title_m:
+                dprint('ENDDDDD', i, title_b)
+                res['title'] = md[title_b:i]
+                _, i, _, _ = indentation(md, i+1)
+                if md[i] == ')':
+                    return res, i+1
+                else:
+                    return None, start
+        i += 1
+    if search in ("SQUARE", "URL"):
+        return None, i
     return res, i
 
 
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
     #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
-    BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!"$%&\',/:;<=>?@^|~\\'
     if md[start] == '\n':
         return stop+1
     i = start
@@ -577,7 +642,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     #        if md[j] in patterns:
     #            markers.append(j)
     #        j += 1
-
+    dprint(f'        | markers={markers}')
     for i in markers:
 
         dprint('        | ', i, md[i])
@@ -586,10 +651,19 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         if i == prev_i+1:
             continue
         if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code']:
-            stack[-1][1].append(md[tok:i] + basic_entity_substitution(md[i+1]))
+            c = md[i+1]
+            stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
             tok = i+2
             found_bs = True
             prev_i = i
+            continue
+        if md[i] == '&' and stack[-1][0] not in ['indented', 'code']:
+            c = '&'
+            f = md.find(';', i+2, stop)
+            if f > -1:
+                c = html.unescape(md[i:f+1])
+            stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
+            tok = f+1
             continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
@@ -626,26 +700,18 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif md[i:i+1] == '[' and not skip:
             i0 = i
             if i > 0 and md[i-1] == '!':
-                stack[-1][1].append(md[tok:i-1])
-                rr, i = detect_link(md, i+1, stop)
-                if rr is not None:
-                    rr['original'] = md[i0-1:i]
-                    stack.append(('img', [rr], i))
-                    tok = keep_element(md, tok, i-1, stack, 1)
-                else:
-                    i = i0
+                e = 'img'
+                o = -1
             else:
-                stack[-1][1].append(md[tok:i])
-                rr, i = detect_link(md, i+1, stop)
-                if rr is not None:
-                    rr['original'] = md[i0:i]
-                    stack.append(('a', [rr], i))
-                    if 'link_id' in rr:
-                        skip = True
-                        rr['title'] = ''
-                    tok = keep_element(md, tok, i-1, stack, 1)
-                else:
-                    i = i0-1
+                e = 'a'
+                o = 0
+            rr, i = detect_link(md, i+1, stop)
+            if rr is not None:
+                rr['original'] = md[i0+o:i]
+                tok = open_element(md, tok, i0+o, stack, 1, e, [rr])
+                tok = keep_element(md, tok, i-1, stack, 1)
+            else:
+                i = i0-1
         elif md[i:i+1] in '<>&':
             tok = html_entity(md, tok, i, stack)
         else:
@@ -690,7 +756,7 @@ def transform(md: str, start: int = 0) -> str:
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])} {phase}')
         
         if phase == "in_context":
-            dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25} ')
+            dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
             before = i
             i = context(md, i, eol, stack)
             dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
@@ -716,7 +782,7 @@ def transform(md: str, start: int = 0) -> str:
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
-            dprint(f'{i:2} | _p | {" ":25} ')
+            dprint(f'{i:2} | _p | {" ":25}')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, skip)
             skip = 0
