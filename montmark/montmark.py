@@ -34,6 +34,9 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 MATCHING = {'"': '"', "'": "'", "(": ")"}
 BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!"$%&\',/:;<=>?@^|~\\'
 
+HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}
+HE_TR = str.maketrans(HE)
+
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
@@ -207,7 +210,7 @@ def prefix(md: str, start: int = 0) -> tuple:
     i = start
     seq, w = '', 0
     while i < len(md):
-        if not seq and md[i] in '#`':
+        if not seq and md[i] in '#`~':
             seq = md[i]
         elif not seq and md[i] in '1234567890':
             seq = 'digits'
@@ -226,11 +229,13 @@ def html_text(element: str, content, last):
     """Prepare html segments but keep them in a list for future join."""
     if element == 'span' or element == 'p_':
         element = ''
-    elif element in ['fenced', 'indented']:
+    elif element in ['indented'] or element[:6] in ['fenced']:
+        if content:
+            content.append('\n')
         content.insert(0, f'<pre><code>')
         if last != '\n':
             content.insert(0, '\n')
-        content.append(f'\n</code></pre>')
+        content.append(f'</code></pre>')
         content.append('\n')
     elif element in ['a', 'img']:
         text = content[0]['square']
@@ -341,8 +346,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 i -= 1
             else:
                 broken = True
-        elif node == 'fenced':
-            if seq in '`~' and w2 == 3:
+        elif node[:6] == 'fenced':
+            if node in 'fenced' + seq*w2:
                 broken = True
                 i = stop
             else:
@@ -386,12 +391,15 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
 
 
 def structure(md: str, start: int, stop: int, stack) -> list:
-    """Build new blocks."""
+    """Build new blocks.
+
+    ...
+    """
     i = start
     sp_or_tabs, w1 = False, 0
     seq, w2 = '', 0
     phase = ''
-    if stack[-1][0] == 'fenced':
+    if stack[-1][0][:6] == 'fenced':
         return i
     hr, eol = check_hr(md, i)
     if hr:
@@ -404,13 +412,13 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if seq in '`~' and w2 == 3:
-            stack.append(('fenced', [], i))
+        if seq in '`~' and w2 >= 3:
+            stack.append(('fenced' + seq*w2, [], i))
             i = stop
             return i
         elif md[i] in '\r\n':
             return i
-        elif stack[-1][0] == 'fenced':
+        elif stack[-1][0][:6] == 'fenced':
             i = i0
             return i
         elif sp_or_tabs and w >= 4:
@@ -492,7 +500,6 @@ def keep_element(md, tok, i, stack, offset):
 
 def basic_entity_substitution(c):
     """Simple entity substitution for single character."""
-    HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}
     if c in HE:
         return HE[c]
     else:
@@ -584,11 +591,9 @@ def detect_link(md, start, stop):
                 res['title'] = ''
                 return res, i+1
             elif not title_b and md[i] in '"\'(':
-                dprint('INITTTT', i)
                 title_b = i+1
                 title_m = MATCHING[md[i]]
             elif title_b and md[i] == title_m:
-                dprint('ENDDDDD', i, title_b)
                 res['title'] = md[title_b:i]
                 _, i, _, _ = indentation(md, i+1)
                 if md[i] == ')':
@@ -604,8 +609,8 @@ def detect_link(md, start, stop):
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
     #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
-    if md[start] == '\n':
-        return stop+1
+    #if md[start] == '\n':
+    #    return stop+1
     i = start
     tok, seq, w = start, '', 0
     stl = True
@@ -613,7 +618,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     found_bs = False
     prev_i = -2
 
-    if stack[-1][0]  in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
+    if (stack[-1][0] in ['p', 'p_', 'indented'] or stack[-1][0][:6] == 'fenced') and offset == 0:
         if stack[-1][1]:
             stack[-1][1].append('\n')
 
@@ -628,7 +633,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     matches = []
     markers = []
-    if stack[-1][0] != 'fenced':
+    if stack[-1][0][:6] != 'fenced':
         matches = regex.finditer(md, start, stop)
     for match in matches:
         markers.append(match.start())
@@ -661,9 +666,17 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             c = '&'
             f = md.find(';', i+2, stop)
             if f > -1:
-                c = html.unescape(md[i:f+1])
-            stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
-            tok = f+1
+                text = md[i:f+1]
+                u_text = html.unescape(text)
+                if len(u_text) == len(text):
+                    stack[-1][1].append(md[tok:i] + basic_entity_substitution('&') + text[1:])
+                    tok = f+1
+                else:
+                    stack[-1][1].append(md[tok:i] + basic_entity_substitution(u_text))
+                    tok = f+1
+            else:
+                stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
+                tok = i+1
             continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
@@ -719,10 +732,11 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     last_elt = stack[-1][0]
     last_content = stack[-1][1]
+
+    s = md[tok:stop].translate(HE_TR)
     if last_elt[0]  == 'h':
-        last_content.append(md[tok:stop].rstrip(' ').rstrip('#').rstrip(' ').lstrip(' '))
-    else:
-        last_content.append(md[tok:stop])
+        s = s.rstrip(' ').rstrip('#').rstrip(' ').lstrip(' ')
+    last_content.append(s)
 
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
@@ -759,7 +773,7 @@ def transform(md: str, start: int = 0) -> str:
             dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
             before = i
             i = context(md, i, eol, stack)
-            dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
+            dprint(f'        | after context i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
                 dprint(f'        | ROLLBACK i={i} before={before}')
@@ -767,7 +781,10 @@ def transform(md: str, start: int = 0) -> str:
                 phase = "in_payload"
                 continue
             else:
-                phase = "in_structure" if i < eol else "fforward"
+                if stack[-1][0][:6] == 'fenced':
+                    phase = "in_payload"
+                else:
+                    phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
             dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25}')
@@ -778,7 +795,7 @@ def transform(md: str, start: int = 0) -> str:
                     i = eoli
                     continue
             i = structure(md, i, eol, stack)
-            dprint(f'        | i={i} => {".".join([x[0] for x in stack[0:]])}')
+            dprint(f'        | after structure i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
@@ -786,7 +803,7 @@ def transform(md: str, start: int = 0) -> str:
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, skip)
             skip = 0
-            dprint(f'        | => {r:2}')
+            dprint(f'        | after payload => {r:2}')
             phase = "in_context"
 
         i = eol+1

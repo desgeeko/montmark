@@ -6,4 +6,5 @@ venv/
 pdfsyntax.egg-info/
 debug.py
 emacs-layout.el
+tests/spec.json
 
