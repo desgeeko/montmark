@@ -230,6 +230,8 @@ def html_text(element: str, content, params, last):
     if element == 'span' or element == 'p_':
         element = ''
     elif element in ['fenced', 'indented']:
+        if element == 'indented' and not content[-1]:
+            content = content[:-2]
         lang = f' class="language-{params[2]}"' if element == 'fenced' and params[2] else ''
         if content:
             content.append('\n')
@@ -300,7 +302,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node in ['p', 'p_']:
-            if hr or md[i] in '\r\n' or seq == '#' or (sp_or_tabs and md[i] != ' ' and i-tok >= 4):
+            if hr or md[i] in '\r\n' or seq == '#':
                 broken = True
                 i = i0
             elif md[i] in '-.':
@@ -366,11 +368,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif node == 'indented':
-            if  w<4:
+            if  w<4 and md[i] != '\n':
                 broken = True
             else:
                 node_cursor += 1
-                i -= 1
+                i = i0 + 3
 
         if broken:
             break
@@ -420,11 +422,13 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             return i
         elif md[i] in '\r\n':
             return i
-        elif stack[-1][0] == 'fenced':
+        elif stack[-1][0] in ['fenced', 'indented']:
             i = i0
             return i
         elif sp_or_tabs and w >= 4:
             stack.append(('indented', [], i, None))
+            if ii - i0 > 4:
+                ii = i0 + 4
             return ii
         elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
             stack.append((f'h{w2}', [], i, None))
@@ -635,7 +639,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     matches = []
     markers = []
-    if stack[-1][0] != 'fenced':
+    if stack[-1][0] not in ['fenced', 'indented']:
         matches = regex.finditer(md, start, stop)
     for match in matches:
         markers.append(match.start())
@@ -783,7 +787,7 @@ def transform(md: str, start: int = 0) -> str:
                 phase = "in_payload"
                 continue
             else:
-                if stack[-1][0] == 'fenced':
+                if stack[-1][0] in ['fenced', 'indented']:
                     phase = "in_payload"
                 else:
                     phase = "in_structure" if i < eol else "fforward"
