@@ -225,14 +225,15 @@ def prefix(md: str, start: int = 0) -> tuple:
         i += 1
 
 
-def html_text(element: str, content, last):
+def html_text(element: str, content, params, last):
     """Prepare html segments but keep them in a list for future join."""
     if element == 'span' or element == 'p_':
         element = ''
-    elif element in ['indented'] or element[:6] in ['fenced']:
+    elif element in ['fenced', 'indented']:
+        lang = f' class="language-{params[2]}"' if element == 'fenced' and params[2] else ''
         if content:
             content.append('\n')
-        content.insert(0, f'<pre><code>')
+        content.insert(0, f'<pre><code{lang}>')
         if last != '\n':
             content.insert(0, '\n')
         content.append(f'</code></pre>')
@@ -288,11 +289,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             elt = 'h1' if setext == '=' else 'h2'
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1].pop()
-            stack[-1] = (elt, stack[-1][1], stack[-1][2])
+            stack[-1] = (elt, stack[-1][1], stack[-1][2], None)
             return eol
 
     while i < len(md) and not close:
-        node = stack[node_cursor][0]
+        node, _, _, params = stack[node_cursor]
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
@@ -346,8 +347,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 i -= 1
             else:
                 broken = True
-        elif node[:6] == 'fenced':
-            if node in 'fenced' + seq*w2:
+        elif node == 'fenced':
+            if params[0] == seq and params[1] <= w2 and not md[i:stop].lstrip(' '):
                 broken = True
                 i = stop
             else:
@@ -379,14 +380,14 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     if close:
         node_cursor = 1
     for _ in range(len(stack) - node_cursor):
-        element, fragments, rb = stack.pop()
+        element, fragments, rb, params = stack.pop()
         if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb}')
             return rb
         else:
             current = stack[-1][1]
             last = current[-1] if current else ''
-            current += html_text(element, fragments, last)
+            current += html_text(element, fragments, params, last)
     return i
 
 
@@ -403,32 +404,33 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         return i
     hr, eol = check_hr(md, i)
     if hr:
-        stack.append(('hr', [], i))
+        stack.append(('hr', [], i, None))
         return eol
     while i < len(md):
-        node, accu, _ = stack[-1]
+        node, accu, _, _ = stack[-1]
         i0 = i
         _, ii, sp_or_tabs, w = indentation(md, i0)
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if seq in '`~' and w2 >= 3:
-            stack.append(('fenced' + seq*w2, [], i))
+        if seq in '`~' and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
+            lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
+            stack.append(('fenced', [], i, (seq, w2, lang)))
             i = stop
             return i
         elif md[i] in '\r\n':
             return i
-        elif stack[-1][0][:6] == 'fenced':
+        elif stack[-1][0] == 'fenced':
             i = i0
             return i
         elif sp_or_tabs and w >= 4:
-            stack.append(('indented', [], i))
+            stack.append(('indented', [], i, None))
             return ii
         elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
-            stack.append((f'h{w2}', [], i))
+            stack.append((f'h{w2}', [], i, None))
             return i+1
         elif md[i] == '>':
-            stack.append(('blockquote', [], i))
+            stack.append(('blockquote', [], i, None))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0][:2] != 'ul':
                 if len(stack) >= 2 and stack[-2][0][:2] == 'ul':
@@ -436,9 +438,9 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append((f'ul{offset+ix-i0}', [], i))
-            stack.append(('li', [], i))
-            stack.append(('p_', [], i))
+                stack.append((f'ul{offset+ix-i0}', [], i, None))
+            stack.append(('li', [], i, None))
+            stack.append(('p_', [], i, None))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0][:2] != 'ol':
                 if len(stack) >= 2 and stack[-2][0][:2] == 'ol':
@@ -446,16 +448,16 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append((f'ol{offset+ix-i0}', [], i))
-            stack.append(('li', [], i))
-            stack.append(('p_', [], i))
+                stack.append((f'ol{offset+ix-i0}', [], i, None))
+            stack.append(('li', [], i, None))
+            stack.append(('p_', [], i, None))
         elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] not in ['http'] and stack[-1][0] != 'html':
-            stack.append(('html', [], i))
+            stack.append(('html', [], i, None))
             return i
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
             if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], ''), stack[-1][2])
-            stack.append(('p', [], ii))
+                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], stack[-1][3], ''), stack[-1][2], None)
+            stack.append(('p', [], ii, None))
             return ii
         else:
             return ii
@@ -468,7 +470,7 @@ def open_element(md, tok, i, stack, offset, element, init = None):
     """Flush segment and add new span element."""
     stack[-1][1].append(md[tok:i-offset+1])
     init = [] if init == None else init
-    stack.append((element, init, i-offset+1))
+    stack.append((element, init, i-offset+1, None))
     tok = i + 1
     return tok
 
@@ -480,10 +482,10 @@ def close_element(md, tok, i, stack, offset):
     current = stack[-1][1]
     if prev[0] == 'span' and len(prev[1][0]) > 5 and prev[1][0][1:5] == 'http':
         url = prev[1][0][1:-1]
-        current += html_text('a', [{'square': url, 'url': url}], '')
+        current += html_text('a', [{'square': url, 'url': url}], None, '')
     else:
         last = current[-1] if current else ''
-        current += html_text(prev[0], prev[1], last)
+        current += html_text(prev[0], prev[1], prev[3], last)
     tok = i + offset
     return tok
 
@@ -618,7 +620,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     found_bs = False
     prev_i = -2
 
-    if (stack[-1][0] in ['p', 'p_', 'indented'] or stack[-1][0][:6] == 'fenced') and offset == 0:
+    if stack[-1][0] in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
         if stack[-1][1]:
             stack[-1][1].append('\n')
 
@@ -633,7 +635,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     matches = []
     markers = []
-    if stack[-1][0][:6] != 'fenced':
+    if stack[-1][0] != 'fenced':
         matches = regex.finditer(md, start, stop)
     for match in matches:
         markers.append(match.start())
@@ -687,8 +689,8 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok -= 1
         elif stl and md[i] in ['*', '_'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong'):
             if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
-                stack[-2] = 'strong', stack[-2][1], stack[-2][2]
-                stack[-1] = 'em', stack[-1][1], stack[-1][2]
+                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
+                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
             tok = close_element(md, tok, i, stack, 1)
         elif md[i:i+1] == '`' and stack[-1][0] == 'code':
             stl = True
@@ -740,11 +742,11 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
-        stack.append(('br', [''], 0))
+        stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
     if last_elt[0]  == 'p' and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
         last_content[-1] = last_content[-1].rstrip('\\')
-        stack.append(('br', [''], 0))
+        stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
     return stop+1
 
@@ -759,7 +761,7 @@ def transform(md: str, start: int = 0) -> str:
     """Render HTML from markdown string."""
     res = ''
     i = start
-    stack = [('root', [], i)] #node, accu, checkpoints
+    stack = [('root', [], i, None)] #node, accu, checkpoint, optional parameters
     links = {}
     phase = "in_context"
     skip = 0
@@ -781,7 +783,7 @@ def transform(md: str, start: int = 0) -> str:
                 phase = "in_payload"
                 continue
             else:
-                if stack[-1][0][:6] == 'fenced':
+                if stack[-1][0] == 'fenced':
                     phase = "in_payload"
                 else:
                     phase = "in_structure" if i < eol else "fforward"
@@ -839,7 +841,7 @@ def transform(md: str, start: int = 0) -> str:
                 obj['url'], obj['title'] = links.get(link_id.upper(), (None, ''))
             all_fragments.pop(j)
             if obj['url'] is not None:
-                link = html_text(x[0], x[1], '')
+                link = html_text(x[0], x[1], x[3], '')
             else:
                 link = [obj['original']]
             all_fragments[j:j] = link
