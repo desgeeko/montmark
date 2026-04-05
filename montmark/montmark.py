@@ -142,13 +142,18 @@ def check_setext(md: str, start = 0):
     tok = ''
     nb = 0
     i = start
+    sp = 0
     c = md.find('\n', i)
     eol = c if c != -1 else len(md)
     while i < eol:
+        if sp > 3:
+            return False, -1
         if not tok:
             if md[i] in '=-':
                 tok = md[i]
                 nb = 1
+            elif md[i] == ' ':
+                sp += 1
             else:
                 return False, -1
             i += 1
@@ -156,10 +161,9 @@ def check_setext(md: str, start = 0):
         if md[i] != tok:
             return False, -1
         elif md[i] == tok:
-            #toks += md[i]
             nb += 1
         i += 1
-    res = tok if nb >= 2 else False
+    res = tok if nb >= 1 else False
     return res, eol
 
 
@@ -302,7 +306,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node in ['p', 'p_']:
-            if hr or md[i] in '\r\n' or seq == '#':
+            if hr or md[i] in '\r\n' or (seq == '#' and w < 4):
                 broken = True
                 i = i0
             elif md[i] in '-.':
@@ -314,6 +318,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 node_cursor += 1
                 i -= 1
+                #i = i0 - 1
         elif len(node) >= 2 and node == 'li':
             offset = int(stack[node_cursor-1][0][2:])
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
@@ -357,6 +362,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 i = i0 - 1
                 node_cursor += 1
         elif node in ['hr']:
+            i = i0 - 1
             broken = True
         elif node[0] == 'h' and len(node) == 2:
             i = i0
@@ -431,6 +437,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 ii = i0 + 4
             return ii
         elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
+        #elif seq  == '#' and w2 <= 6:
             stack.append((f'h{w2}', [], i, None))
             return i+1
         elif md[i] == '>':
@@ -741,7 +748,10 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     s = md[tok:stop].translate(HE_TR)
     if last_elt[0]  == 'h':
-        s = s.rstrip(' ').rstrip('#').rstrip(' ').lstrip(' ')
+        s = s.lstrip(' ').rstrip(' ')
+        t = s.rstrip('#')
+        if t and t[-1] == ' ':
+            s = s.rstrip('#').rstrip(' ')
     last_content.append(s)
 
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
