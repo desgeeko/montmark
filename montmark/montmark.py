@@ -37,6 +37,15 @@ BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!"$%&\',/:;<=>?@^|~\\'
 HE = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}
 HE_TR = str.maketrans(HE)
 
+TAGS_CONDITION_1 = 'pre script style textarea'.split()
+TAGS_CONDITION_6 = '''
+address article aside base basefont blockquote body caption center col
+colgroup dd details dialog dir div dl dt fieldset figcaption figure footer
+form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li
+link main menu menuitem nav noframes ol optgroup option p param search
+section summary table tbody td tfoot th thead title tr track ul
+'''.split()
+
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
@@ -194,6 +203,72 @@ def check_hr(md: str, start = 0):
     return res, eol
 
 
+def check_html_block_OLD(md: str, stack, start = 0):
+    """Dedicated detection of horizontal rule."""
+    i = start
+    if md[i] == '<' and i+5 < len(md) and md[i+1:i+5] not in ['http']:
+        return True
+    else:
+        return False
+
+
+def check_html_block(md: str, start, stop):
+    """Dedicated detection of html block."""
+    i = start
+    ends = False
+    cond_1 = False
+    cond_6 = False
+    cond_7 = False
+    for t in TAGS_CONDITION_1:
+        l = len(t)
+        if i+l < stop and md[i+1:i+l+1].lower() == t:
+             if md[i+1+l] in ' \t>\n':
+                cond_1 = True
+    for t in TAGS_CONDITION_6:
+        l = len(t)
+        closing = md[i+1] == '/'
+        if i+l+1 < stop and (md[i+1:i+l+1].lower() == t or (closing and md[i+2:i+l+2].lower() == t)):
+             if not closing and md[i+1+l] in ' \t>\n':
+                cond_6 = True
+             elif closing and md[i+2+l] in ' \t>\n':
+                cond_6 = True
+    b = md.find('>', i, stop)
+    if b > i:
+        _, c, _, _ = indentation(md, b+1)
+        if b == stop or c == stop:
+            cond_7 = True
+    if cond_1:
+        condition = 1
+        line = md[i:stop]
+        for t in TAGS_CONDITION_1:
+            if '</' + t + '>' in line.lower():
+                ends = True
+                break
+    elif i+4 < len(md) and md[i:i+4] == '<!--':
+        condition = 2
+        if md.find('-->', i, stop) > -1:
+            ends = True
+    elif i+2 < len(md) and md[i:i+2] == '<?':
+        condition = 3
+        if md.find('-->', i, stop) > -1:
+            ends = True
+    elif i+3 < len(md) and md[i:i+2] == '<!' and md[i].isalpha():
+        condition = 4
+        if md.find('-->', i, stop) > -1:
+            ends = True
+    elif i+9 < len(md) and md[i:i+9] == '<![CDATA[':
+        condition = 5
+        if md.find('-->', i, stop) > -1:
+            ends = True
+    elif cond_6:
+        condition = 6
+    elif cond_7:
+        condition = 7
+    else:
+        return None
+    return (condition, ends)
+
+
 def indentation(md: str, start: int = 0) -> tuple:
     """Find & expand spaces and tabs."""
     i = start
@@ -309,6 +384,13 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             if hr or md[i] in '\r\n' or (seq == '#' and w < 4):
                 broken = True
                 i = i0
+            elif md[i] == '<' and (typ := check_html_block(md, i, stop)):
+                if typ[0] < 7:
+                    broken = True
+                    i = i0
+                else:
+                    node_cursor += 1
+                    i -= 1
             elif md[i] in '-.':
                 broken = True
                 if len(stack) >2 and stack[-3][0][:2] in ['ul', 'ol']:
@@ -368,11 +450,38 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             i = i0
             broken = True
         elif node == 'html':
-            if md[i] in '\r\n':
-                broken = True
-            else:
-                node_cursor += 1
-                i -= 1
+            if params >= 6:
+                if md[ii] in '\r\n':
+                    broken = True
+                else:
+                    node_cursor += 1
+                    i = i0-1
+            elif params == 1:
+                if md[ii] == '\n':
+                    stack[-1][1].append('\n')
+                line = md[i:stop].lower()
+                for t in TAGS_CONDITION_1:
+                    if t in line:
+                        stack[-1][1].append(md[i:stop])
+                        i = stop
+                        broken = True
+                        break
+                    else:
+                        node_cursor += 1
+                        i = i0-1
+            elif params > 1 and params < 6:
+                if md[ii] == '\n':
+                    stack[-1][1].append('\n')
+                line = md[i:stop].lower()
+                ending = {2: '-->', 3: '?>', 4: '>', 5: ']]>'}
+                if ending[params] in line:
+                    stack[-1][1].append('\n' + md[i0:stop])
+                    i = stop
+                    broken = True
+                    break
+                else:
+                    node_cursor += 1
+                    i = i0-1
         elif node == 'indented':
             if  w<4 and md[i] != '\n':
                 broken = True
@@ -414,6 +523,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     if hr:
         stack.append(('hr', [], i, None))
         return eol
+    if stack[-1][0] == 'html':
+        return i
     while i < len(md):
         node, accu, _, _ = stack[-1]
         i0 = i
@@ -462,9 +573,18 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack.append((f'ol{offset+ix-i0}', [], i, None))
             stack.append(('li', [], i, None))
             stack.append(('p_', [], i, None))
-        elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] not in ['http'] and stack[-1][0] != 'html':
-            stack.append(('html', [], i, None))
-            return i
+        #elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] not in ['http'] and stack[-1][0] != 'html':
+        #    stack.append(('html', [], i, None))
+        #    return i
+        elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
+            dprint('        | HTML BLOCK', ii, stop, typ)
+            condition, ends = typ
+            if ends:
+                current = stack[-1][1]
+                current += md[i0:stop]
+            else:
+                stack.append(('html', [md[i0:stop]], i, condition))
+            return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
             if stack[-1][0] == 'li':
                 stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], stack[-1][3], ''), stack[-1][2], None)
@@ -640,8 +760,8 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         start += 1
 
     if stack[-1][0] == 'html':
-        stack[-1][1].append(md[start:stop])
         stack[-1][1].append('\n')
+        stack[-1][1].append(md[start:stop])
         return stop+1
 
     matches = []
