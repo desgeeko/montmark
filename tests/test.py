@@ -21,9 +21,9 @@ b
 '''
 <p>a</p>
 <table>
-<tr>
-<td>foo</td>
-</tr>
+    <tr>
+        <td>foo</td>
+    </tr>
 </table>
 <p>b</p>
 '''

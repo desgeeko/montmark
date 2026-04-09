@@ -233,9 +233,9 @@ def check_html_block(md: str, start, stop):
              elif closing and md[i+2+l] in ' \t>\n':
                 cond_6 = True
     b = md.find('>', i, stop)
-    if b > i:
+    if b > i+1 and md[i+1].isalpha():
         _, c, _, _ = indentation(md, b+1)
-        if b == stop or c == stop:
+        if b == stop or c == stop and ':' not in md[i:stop] and '@' not in md[i:stop]: #TODO stricter url test
             cond_7 = True
     if cond_1:
         condition = 1
@@ -336,7 +336,7 @@ def html_text(element: str, content, params, last):
             content.insert(0, '\n')
     elif element in ['br']:
         content[-1] = f'<{element} />'
-    elif element in ['html']:
+    elif element in ['html', 'raw']:
         pass
     else:
         if len(element) > 2 and element[:2] in ['ul', 'ol', 'li']:
@@ -499,7 +499,10 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     for _ in range(len(stack) - node_cursor):
         element, fragments, rb, params = stack.pop()
         if element in ['em', 'strong', 'code']:
-            dprint(f'        | {element} should be rolled back to rb={rb}')
+            dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
+            offset = 0
+            if element == 'code':
+                offset = params
             return rb
         else:
             current = stack[-1][1]
@@ -548,7 +551,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 ii = i0 + 4
             return ii
         elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
-        #elif seq  == '#' and w2 <= 6:
             stack.append((f'h{w2}', [], i, None))
             return i+1
         elif md[i] == '>':
@@ -573,11 +575,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack.append((f'ol{offset+ix-i0}', [], i, None))
             stack.append(('li', [], i, None))
             stack.append(('p_', [], i, None))
-        #elif md[i] == '<' and not sp_or_tabs and i+5 < len(md) and md[i+1:i+5] not in ['http'] and stack[-1][0] != 'html':
-        #    stack.append(('html', [], i, None))
-        #    return i
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
-            dprint('        | HTML BLOCK', ii, stop, typ)
+            dprint('        | html block', typ)
             condition, ends = typ
             if ends:
                 current = stack[-1][1]
@@ -597,11 +596,11 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     return i
 
 
-def open_element(md, tok, i, stack, offset, element, init = None):
+def open_element(md, tok, i, stack, offset, element, params, init = None):
     """Flush segment and add new span element."""
     stack[-1][1].append(md[tok:i-offset+1])
     init = [] if init == None else init
-    stack.append((element, init, i-offset+1, None))
+    stack.append((element, init, i-offset+1, params))
     tok = i + 1
     return tok
 
@@ -611,12 +610,8 @@ def close_element(md, tok, i, stack, offset):
     stack[-1][1].append(md[tok:i-offset+1])
     prev = stack.pop()
     current = stack[-1][1]
-    if prev[0] == 'span' and len(prev[1][0]) > 5 and prev[1][0][1:5] == 'http':
-        url = prev[1][0][1:-1]
-        current += html_text('a', [{'square': url, 'url': url}], None, '')
-    else:
-        last = current[-1] if current else ''
-        current += html_text(prev[0], prev[1], prev[3], last)
+    last = current[-1] if current else ''
+    current += html_text(prev[0], prev[1], prev[3], last)
     tok = i + offset
     return tok
 
@@ -739,17 +734,36 @@ def detect_link(md, start, stop):
     return res, i
 
 
+def check_span(md: str, tok: int, i: int):
+    """Validate and identify span type."""
+    span = md[tok+1:i]
+    if '@' in span:
+        return 'automail'
+    elif ':' in span:
+        if ' ' not in span:
+            return 'autolink'
+        else:
+            return None
+    else:
+        if "*" not in span:
+            return 'raw'
+        else:
+            return None
+
+
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
     #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
     #if md[start] == '\n':
     #    return stop+1
     i = start
+    idx = 0
     tok, seq, w = start, '', 0
     stl = True
     skip = False
     found_bs = False
     prev_i = -2
+    bypass = []
 
     if stack[-1][0] in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
         if stack[-1][1]:
@@ -781,12 +795,15 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     #            markers.append(j)
     #        j += 1
     dprint(f'        | markers={markers}')
-    for i in markers:
 
-        dprint('        | ', i, md[i])
+    while idx < len(markers):
+        i = markers[idx]
+        dprint('        | ', i, md[i], stack[-1])
         if i < tok:
+            idx += 1
             continue
         if i == prev_i+1:
+            idx += 1
             continue
         if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code']:
             c = md[i+1]
@@ -794,8 +811,9 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok = i+2
             found_bs = True
             prev_i = i
+            idx += 1
             continue
-        if md[i] == '&' and stack[-1][0] not in ['indented', 'code']:
+        if md[i] == '&' and stack[-1][0] not in ['indented', 'code', 'span']:
             c = '&'
             f = md.find(';', i+2, stop)
             if f > -1:
@@ -810,6 +828,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             else:
                 stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
                 tok = i+1
+            idx += 1
             continue
         if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
             tok = close_element(md, tok, i, stack, 3)
@@ -823,24 +842,65 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
                 stack[-1] = 'em', stack[-1][1], stack[-1][2], None
             tok = close_element(md, tok, i, stack, 1)
-        elif md[i:i+1] == '`' and stack[-1][0] == 'code':
+        #elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
+        #    stl = True
+        #    tok = close_element(md, tok, i, stack, 3)
+        #    tok -= 2
+        #elif md[i-1:i+1] == '``' and stack[-1][0] == 'code' and stack[-1][3] == 2:
+        #    stl = True
+        #    tok = close_element(md, tok, i, stack, 2)
+        #    tok -= 1
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
         elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
-            tok = open_element(md, tok, i, stack, 3, 'em')
-            tok = open_element(md, tok, i, stack, 3, 'strong')
+            tok = open_element(md, tok, i, stack, 3, 'em', None)
+            tok = open_element(md, tok, i, stack, 3, 'strong', None)
         elif stl and i > start and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
-            tok = open_element(md, tok, i, stack, 2, 'strong')
+            tok = open_element(md, tok, i, stack, 2, 'strong', None)
         elif stl and md[i] in ['*', '_'] and md[i+1] != md[i]:
-            tok = open_element(md, tok, i, stack, 1, 'em')
-        elif md[i:i+1] == '`':
-            tok = open_element(md, tok, i, stack, 1, 'code')
+            tok = open_element(md, tok, i, stack, 1, 'em', None)
+        #elif i> 0 and md[i-2:i+1] == '```' and md[i+1] != md[i] and stack[-1][0] != 'code':
+        #    tok = open_element(md, tok, i, stack, 3, 'code', 3)
+        #    dprint('DDDDDDD CODE 3', i, stack)
+        #    stl = False
+        #elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != md[i] and stack[-1][0] != 'code':
+        #    tok = open_element(md, tok, i, stack, 2, 'code', 2)
+        #    dprint('DDDDDDD CODE 2', i, stack)
+        #    stl = False
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] != 'code':
+            tok = open_element(md, tok, i, stack, 1, 'code', 1)
+            #dprint('DDDDDDD CODE 1', i, stack)
             stl = False
         elif md[i:i+1] == '>' and stack[-1][0] == 'span':
-            tok = close_element(md, tok, i, stack, 0)
-            tok += 1
-        elif md[i:i+1] == '<' and (md[i+1] > 'a' or md[i+1] == '/'):
-            tok = open_element(md, tok, i-1, stack, 0, 'span')
+            typ = check_span(md, tok, i)
+            if typ == 'raw':
+                _, content, cp, params = stack[-1]
+                stack[-1] = (typ, content, cp, params)
+                tok = close_element(md, tok, i, stack, 0)
+                tok += 1
+            elif typ == 'autolink':
+                txt = md[tok+1:i]
+                url = txt.translate(HE_TR)
+                stack[-1] = ('a', [{'square': url, 'url': url}], None, '')
+                tok = close_element(md, tok, i, stack, 0)
+                tok += 1                
+            elif typ == 'automail':
+                txt = md[tok+1:i]
+                prefix = 'mailto:' if '@' in txt and 'mailto' not in txt.lower() else ''
+                url = prefix + txt
+                url = url.translate(HE_TR)
+                stack[-1] = ('a', [{'square': txt, 'url': url}], None, '')
+                tok = close_element(md, tok, i, stack, 0)
+                tok += 1                
+            else:
+                _, _, cp, _ = stack.pop()
+                dprint(f'        | span should be rolled back to cp={cp}', stack)
+                idx = markers.index(cp)
+                bypass.append(idx)
+                continue
+        elif md[i:i+1] == '<' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
+            tok = open_element(md, tok, i-1, stack, 0, 'span', None)
         elif stack[-1][0] == 'html':
             break
         elif md[i:i+1] == '[' and not skip:
@@ -854,14 +914,16 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             rr, i = detect_link(md, i+1, stop)
             if rr is not None:
                 rr['original'] = md[i0+o:i]
-                tok = open_element(md, tok, i0+o, stack, 1, e, [rr])
+                tok = open_element(md, tok, i0+o, stack, 1, e, None, [rr])
                 tok = keep_element(md, tok, i-1, stack, 1)
             else:
                 i = i0-1
-        elif md[i:i+1] in '<>&':
+        elif md[i] in '<>&' and stack[-1][0] not in ['span']:
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
+
+        idx += 1
 
     last_elt = stack[-1][0]
     last_content = stack[-1][1]
