@@ -335,8 +335,6 @@ def html_text(element: str, content, params, last):
     elif element in ['html', 'raw']:
         pass
     else:
-        if len(element) > 2 and element[:2] in ['ul', 'ol', 'li']:
-            element = element[:2]
         content.insert(0, f'<{element}>')
         if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
             content.insert(0, '\n')
@@ -391,16 +389,16 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                     i -= 1
             elif md[i] in '-.' and md[i+1] in ' \t':
                 broken = True
-                if len(stack) >2 and stack[-3][0][:2] in ['ul', 'ol']:
-                    i = start + int(stack[-3][0][2:])
+                if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
+                    i = start + stack[-3][3]
                 else:
                     i = i0
             else:
                 node_cursor += 1
                 #i -= 1
                 i = i0 - 1
-        elif len(node) >= 2 and node == 'li':
-            offset = int(stack[node_cursor-1][0][2:])
+        elif node == 'li':
+            offset = stack[node_cursor-1][3]
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 if i-start < offset:
                     broken = True
@@ -417,7 +415,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             else:
                 node_cursor += 1
                 i -= 1
-        elif len(node) > 2 and node[:2] in ['ul', 'ol']:
+        elif len(node) >= 2 and node[:2] in ['ul', 'ol']:
             if md[i] in '>':
                 broken = True
             elif seq == '#':
@@ -554,23 +552,23 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif md[i] == '>':
             stack.append(('blockquote', [], i, None))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
-            if stack[-1][0][:2] != 'ul':
-                if len(stack) >= 2 and stack[-2][0][:2] == 'ul':
-                    offset = int(stack[-2][0][2:])
+            if stack[-1][0] != 'ul':
+                if len(stack) >= 2 and stack[-2][0] == 'ul':
+                    offset = stack[-2][3]
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append((f'ul{offset+ix-i0}', [], i, None))
+                stack.append(('ul', [], i, offset+ix-i0))
             stack.append(('li', [], i, None))
             stack.append(('p_', [], i, None))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
-            if stack[-1][0][:2] != 'ol':
-                if len(stack) >= 2 and stack[-2][0][:2] == 'ol':
-                    offset = int(stack[-2][0][2:])
+            if stack[-1][0] != 'ol':
+                if len(stack) >= 2 and stack[-2][0] == 'ol':
+                    offset = stack[-2][3]
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append((f'ol{offset+ix-i0}', [], i, None))
+                stack.append(('ol', [], i, offset+ix-i0))
             stack.append(('li', [], i, None))
             stack.append(('p_', [], i, None))
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
