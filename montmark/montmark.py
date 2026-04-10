@@ -180,15 +180,20 @@ def check_hr(md: str, start = 0):
     """Dedicated detection of horizontal rule."""
     toks = ''
     i = start
+    nb_spc = 0
     c = md.find('\n', i)
     eol = c if c != -1 else len(md)
     while i < eol:
         if not toks:
             if md[i] in '*_-':
                 toks = md[i]
-            elif md[i] in ' \t':
-                pass
+            elif md[i] == ' ':
+                nb_spc += 1
+            elif md[i] == '\t':
+                nb_spc += 4
             else:
+                return False, -1
+            if nb_spc >= 4:
                 return False, -1
             i += 1
             continue
@@ -201,15 +206,6 @@ def check_hr(md: str, start = 0):
         i += 1
     res = True if len(toks) >= 3 else False
     return res, eol
-
-
-def check_html_block_OLD(md: str, stack, start = 0):
-    """Dedicated detection of horizontal rule."""
-    i = start
-    if md[i] == '<' and i+5 < len(md) and md[i+1:i+5] not in ['http']:
-        return True
-    else:
-        return False
 
 
 def check_html_block(md: str, start, stop):
@@ -380,7 +376,9 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         tok2, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
-        if node in ['p', 'p_']:
+        if node in ['em', 'strong', 'code']:
+            return i
+        elif node in ['p', 'p_']:
             if hr or md[i] in '\r\n' or (seq == '#' and w < 4):
                 broken = True
                 i = i0
@@ -391,7 +389,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 else:
                     node_cursor += 1
                     i -= 1
-            elif md[i] in '-.':
+            elif md[i] in '-.' and md[i+1] in ' \t':
                 broken = True
                 if len(stack) >2 and stack[-3][0][:2] in ['ul', 'ol']:
                     i = start + int(stack[-3][0][2:])
@@ -399,8 +397,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                     i = i0
             else:
                 node_cursor += 1
-                i -= 1
-                #i = i0 - 1
+                #i -= 1
+                i = i0 - 1
         elif len(node) >= 2 and node == 'li':
             offset = int(stack[node_cursor-1][0][2:])
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
@@ -545,7 +543,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif stack[-1][0] in ['fenced', 'indented']:
             i = i0
             return i
-        elif sp_or_tabs and w >= 4:
+        elif sp_or_tabs and w >= 4 and stack[-1][0] not in ['p', 'p_']:
             stack.append(('indented', [], i, None))
             if ii - i0 > 4:
                 ii = i0 + 4
@@ -765,9 +763,10 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     prev_i = -2
     bypass = []
 
-    if stack[-1][0] in ['fenced', 'p', 'p_', 'indented'] and offset == 0:
-        if stack[-1][1]:
-            stack[-1][1].append('\n')
+    if stack[-1][0] in ['fenced', 'p', 'p_', 'indented', 'em', 'strong'] and stack[-1][1] and offset == 0:
+        stack[-1][1].append('\n')
+    if stack[-1][0] in ['code'] and stack[-1][1] and offset == 0:
+        stack[-1][1].append(' ')
 
     if offset == 1:
         i += 1
@@ -842,14 +841,14 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
                 stack[-1] = 'em', stack[-1][1], stack[-1][2], None
             tok = close_element(md, tok, i, stack, 1)
-        #elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
-        #    stl = True
-        #    tok = close_element(md, tok, i, stack, 3)
-        #    tok -= 2
-        #elif md[i-1:i+1] == '``' and stack[-1][0] == 'code' and stack[-1][3] == 2:
-        #    stl = True
-        #    tok = close_element(md, tok, i, stack, 2)
-        #    tok -= 1
+        elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
+            stl = True
+            tok = close_element(md, tok, i, stack, 3)
+            tok -= 2
+        elif md[i-1:i+1] == '``' and stack[-1][0] == 'code' and stack[-1][3] == 2:
+            stl = True
+            tok = close_element(md, tok, i, stack, 2)
+            tok -= 1
         elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
@@ -860,17 +859,14 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
         elif stl and md[i] in ['*', '_'] and md[i+1] != md[i]:
             tok = open_element(md, tok, i, stack, 1, 'em', None)
-        #elif i> 0 and md[i-2:i+1] == '```' and md[i+1] != md[i] and stack[-1][0] != 'code':
-        #    tok = open_element(md, tok, i, stack, 3, 'code', 3)
-        #    dprint('DDDDDDD CODE 3', i, stack)
-        #    stl = False
-        #elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != md[i] and stack[-1][0] != 'code':
-        #    tok = open_element(md, tok, i, stack, 2, 'code', 2)
-        #    dprint('DDDDDDD CODE 2', i, stack)
-        #    stl = False
+        elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != md[i] and stack[-1][0] != 'code' and i-2 in markers:
+            tok = open_element(md, tok, i, stack, 3, 'code', 3)
+            stl = False
+        elif i> 1 and md[i-1:i+1] == '``' and md[i+1] != md[i] and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
+            tok = open_element(md, tok, i, stack, 2, 'code', 2)
+            stl = False
         elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] != 'code':
             tok = open_element(md, tok, i, stack, 1, 'code', 1)
-            #dprint('DDDDDDD CODE 1', i, stack)
             stl = False
         elif md[i:i+1] == '>' and stack[-1][0] == 'span':
             typ = check_span(md, tok, i)
@@ -1001,7 +997,7 @@ def transform(md: str, start: int = 0) -> str:
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             payload(md, i, r, stack, skip)
             skip = 0
-            dprint(f'        | after payload => {r:2}')
+            dprint(f'        | after payload => {r:2} {stack[-1]}')
             phase = "in_context"
 
         i = eol+1
