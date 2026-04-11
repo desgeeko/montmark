@@ -45,6 +45,9 @@ link main menu menuitem nav noframes ol optgroup option p param search
 section summary table tbody td tfoot th thead title tr track ul
 '''.split()
 
+SP = ' \xa0\n'
+PUNCTUATION = '_-(){}[]"\'.,!?@#$€£'
+
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
@@ -207,6 +210,32 @@ def check_hr(md: str, start = 0):
     return res, eol
 
 
+def check_tag(md:str, start, stop):
+    """."""
+    i = start+1
+    zone = 'in_main'
+    while i < stop-1:
+        if zone == 'in_main':
+            if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' :-.=/'):
+                return False
+            if md[i] == '=':
+                i += 1
+                if md[i] == '"':
+                    zone = 'in_double'
+                elif md[i] == "'":
+                    zone = 'in_single'
+                else:
+                    return False
+        elif zone == 'in_single':
+            if md[i] == '"':
+                return False
+        elif zone == 'in_double':
+            if md[i] == "'":
+                return False
+        i += 1
+    return True
+
+
 def check_html_block(md: str, start, stop):
     """Dedicated detection of html block."""
     i = start
@@ -230,7 +259,7 @@ def check_html_block(md: str, start, stop):
     b = md.find('>', i, stop)
     if b > i+1 and md[i+1].isalpha():
         _, c, _, _ = indentation(md, b+1)
-        if b == stop or c == stop and ':' not in md[i:stop] and '@' not in md[i:stop]: #TODO stricter url test
+        if (b == stop or c == stop) and ':' not in md[i:stop] and '@' not in md[i:stop]:
             cond_7 = True
     if cond_1:
         condition = 1
@@ -258,7 +287,10 @@ def check_html_block(md: str, start, stop):
     elif cond_6:
         condition = 6
     elif cond_7:
-        condition = 7
+        if check_tag(md, i, stop):
+            condition = 7
+        else:
+            return None
     else:
         return None
     return (condition, ends)
@@ -275,9 +307,9 @@ def indentation(md: str, start: int = 0) -> tuple:
         elif md[i] == '\t':
             w += 4
         else:
-            return start, i, found, w
+            break
         i += 1
-
+    return start, i, found, w
 
 def prefix(md: str, start: int = 0) -> tuple:
     """Isolate digits at start."""
@@ -781,7 +813,7 @@ def check_span(md: str, tok: int, i: int):
         else:
             return None
     else:
-        if "*" not in span:
+        if check_tag(span, 0, len(span)):
             return 'raw'
         else:
             return None
@@ -874,7 +906,12 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif stl and i > 0 and md[i-1:i+1] in ['**','__'] and md[i+1] != md[i] and stack[-1][0] in ('strong', 'em'):
             tok = close_element(md, tok, i, stack, 2)
             tok -= 1
-        elif stl and md[i] in ['*', '_'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong'):
+        elif stl and md[i] in ['*'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong') and md[i-1] not in SP and not (md[i-1] in PUNCTUATION and md[i+1].isalpha()):
+            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
+                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
+                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
+            tok = close_element(md, tok, i, stack, 1)
+        elif stl and md[i] in ['_'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong') and md[i-1] not in SP and md[i+1] in SP:
             if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
                 stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
                 stack[-1] = 'em', stack[-1][1], stack[-1][2], None
@@ -890,17 +927,21 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i]:
+        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP:
             tok = open_element(md, tok, i, stack, 3, 'em', None)
             tok = open_element(md, tok, i, stack, 3, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['**', '__'] and md[i+1] != md[i]:
+        elif stl and i > start and md[i-1:i+1] in ['**'] and md[i+1] != '*' and md[i+1] not in SP:
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and md[i] in ['*', '_'] and md[i+1] != md[i]:
+        elif stl and i > start and md[i-1:i+1] in ['__'] and md[i+1] != '_' and md[i+1] not in SP and md[i-2] in SP:
+            tok = open_element(md, tok, i, stack, 2, 'strong', None)
+        elif stl and md[i] in ['*'] and md[i+1] != '*' and md[i+1] not in SP and not (md[i+1] in PUNCTUATION and md[i-1].isalpha()):
             tok = open_element(md, tok, i, stack, 1, 'em', None)
-        elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != md[i] and stack[-1][0] != 'code' and i-2 in markers:
+        elif stl and md[i] in ['_'] and md[i+1] != '_' and md[i+1] not in SP and md[i-1] in SP and not (md[i+1] in PUNCTUATION and md[i-1].isalpha()):
+            tok = open_element(md, tok, i, stack, 1, 'em', None)
+        elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
-        elif i> 1 and md[i-1:i+1] == '``' and md[i+1] != md[i] and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
+        elif i> 1 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
         elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] != 'code':
@@ -913,6 +954,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 stack[-1] = (typ, content, cp, params)
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1
+                stl = True
             elif typ == 'autolink':
                 txt = md[tok+1:i]
                 url = txt.translate(HE_TR)
@@ -935,6 +977,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 continue
         elif md[i:i+1] == '<' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
+            stl = False
         elif stack[-1][0] == 'html':
             break
         elif md[i:i+1] == '[' and not skip:
@@ -952,7 +995,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 tok = keep_element(md, tok, i-1, stack, 1)
             else:
                 i = i0-1
-        elif md[i] in '<>&' and stack[-1][0] not in ['span']:
+        elif md[i] in '<>&"' and stack[-1][0] not in ['span']:
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
