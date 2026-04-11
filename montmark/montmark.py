@@ -341,7 +341,7 @@ def html_text(element: str, content, params, last):
         if content[-1] != '\n' and element[0] in ['b', 'u', 'o']:
             content.append('\n')
         content.append(f'</{element}>')
-        if element[0] in ['u', 'o', 'p']:
+        if element[0] in ['u', 'o', 'p', 'b']:
             content.append('\n')
     return content
 
@@ -408,7 +408,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                     i -= 1
             elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w>=offset:
                 node_cursor += 1
-                i = ii - 1
+                #i = ii - 1
+                i = i0 + offset - 1
             elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
@@ -416,9 +417,9 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif len(node) >= 2 and node[:2] in ['ul', 'ol']:
-            if md[i] in '>':
-                broken = True
-            elif seq == '#':
+            #if md[i] in '>':
+            #    broken = True
+            if seq == '#':
                 i = ii
                 broken = True
             else:
@@ -492,8 +493,15 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         i += 1
     if close:
         node_cursor = 1
-    for _ in range(len(stack) - node_cursor):
+    nb_exited = len(stack) - node_cursor
+    for _ in range(nb_exited):
         element, fragments, rb, params = stack.pop()
+        if element == 'li' and params == 1:
+            dprint(f'        | check {params} {fragments}')
+            bp_tag = fragments.index('<p>') if '<p>' in fragments else 0
+            ep_tag = fragments.index('</p>') if '</p>' in fragments else None
+            fragments = fragments[bp_tag+1:ep_tag]
+            dprint(f'        | Removing p tag in unique block of li')
         if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
             offset = 0
@@ -542,6 +550,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             i = i0
             return i
         elif sp_or_tabs and w >= 4 and stack[-1][0] not in ['p', 'p_']:
+            if stack[-1][0] == 'li':
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
             stack.append(('indented', [], i, None))
             if ii - i0 > 4:
                 ii = i0 + 4
@@ -550,6 +560,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append((f'h{w2}', [], i, None))
             return i+1
         elif md[i] == '>':
+            if stack[-1][0] == 'li':
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
             stack.append(('blockquote', [], i, None))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
@@ -559,8 +571,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ul', [], i, offset+ix-i0))
-            stack.append(('li', [], i, None))
-            stack.append(('p_', [], i, None))
+            stack.append(('li', [], i, 1))
+            stack.append(('p', [], i, None))
         elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ol':
                 if len(stack) >= 2 and stack[-2][0] == 'ol':
@@ -569,8 +581,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ol', [], i, offset+ix-i0))
-            stack.append(('li', [], i, None))
-            stack.append(('p_', [], i, None))
+            stack.append(('li', [], i, 1))
+            stack.append(('p', [], i, None))
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             dprint('        | html block', typ)
             condition, ends = typ
@@ -582,7 +594,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
             if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], html_text('p', stack[-1][1], stack[-1][3], ''), stack[-1][2], None)
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
             stack.append(('p', [], ii, None))
             return ii
         else:
@@ -708,7 +720,6 @@ def detect_link(md, start, stop):
                 elif md[i] not in ' \t':
                     url_e = i
         elif search == "TITLE":
-            dprint('TITLE', i, title_b)
             if md[i] in ' \t':
                 pass
             elif not title_b and md[i] == ')':
