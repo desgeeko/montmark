@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import argparse
 import re
 import os
 import html
@@ -305,8 +304,13 @@ def html_text(element: str, content, params, last):
     if element == 'span' or element == 'p_':
         element = ''
     elif element in ['fenced', 'indented']:
-        if element == 'indented' and not content[-1]:
-            content = content[:-2]
+        if element == 'indented':
+            i = len(content) - 1
+            while i > 0:
+                if content[i] != '\n':
+                    break
+                i -= 1
+            content = content[:i+1]
         lang = f' class="language-{params[2]}"' if element == 'fenced' and params[2] else ''
         if content:
             content.append('\n')
@@ -326,6 +330,12 @@ def html_text(element: str, content, params, last):
         else:
             html = f'<{element} src="{url}" alt="{text}"{title_attr} />'
         content = [html]
+    elif element in ['ol']:
+        ol_start = '' if params[1] == 1 else f' start="{params[1]}"'
+        content.insert(0, f'<{element}{ol_start}>')
+        if last != '\n':
+            content.insert(0, '\n')
+        content.append(f'\n</{element}>')
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
         if last != '\n':
@@ -336,14 +346,29 @@ def html_text(element: str, content, params, last):
         pass
     else:
         content.insert(0, f'<{element}>')
-        if last != '\n' and element[0] in ['b', 'u', 'o', 'l', 'p', 'h']:
+        if last != '\n' and element[0] in ['b', 'u', 'l', 'p', 'h']:
             content.insert(0, '\n')
-        if content[-1] != '\n' and element[0] in ['b', 'u', 'o']:
+        if content[-1] != '\n' and element[0] in ['b', 'u']:
             content.append('\n')
         content.append(f'</{element}>')
-        if element[0] in ['u', 'o', 'p', 'b']:
+        if element[0] in ['u', 'p', 'b']:
             content.append('\n')
     return content
+
+
+def forward_cursor(md, start, offset):
+    """Skip spaces and tabs."""
+    i = start
+    nb = 0
+    while i < start + offset:
+        if md[i] == ' ':
+            nb += 1
+        elif md[i] == '\t':
+            nb += 4
+        if nb >= offset:
+            break
+        i += 1
+    return i
 
 
 def context(md: str, start: int, stop: int, stack, close = False) -> int:
@@ -390,7 +415,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             elif md[i] in '-.' and md[i+1] in ' \t':
                 broken = True
                 if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
-                    i = start + stack[-3][3]
+                    i = start + stack[-3][3][0]
                 else:
                     i = i0
             else:
@@ -398,7 +423,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 #i -= 1
                 i = i0 - 1
         elif node == 'li':
-            offset = stack[node_cursor-1][3]
+            offset, _ = stack[node_cursor-1][3]
+            dprint(f'        | li with offset {offset}')
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 if i-start < offset:
                     broken = True
@@ -406,17 +432,17 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 else:
                     node_cursor += 1
                     i -= 1
-            elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w>=offset:
+            elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
-                #i = ii - 1
-                i = i0 + offset - 1
-            elif stack[-1][0][0] != 'p' and md[i] not in ' \r\n' and w<offset:
+                i = forward_cursor(md, i0, offset)
+            elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
+                i = i0
             else:
                 node_cursor += 1
                 i -= 1
-        elif len(node) >= 2 and node[:2] in ['ul', 'ol']:
+        elif node in ['ul', 'ol']:
             #if md[i] in '>':
             #    broken = True
             if seq == '#':
@@ -497,7 +523,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     for _ in range(nb_exited):
         element, fragments, rb, params = stack.pop()
         if element == 'li' and params == 1:
-            dprint(f'        | check {params} {fragments}')
             bp_tag = fragments.index('<p>') if '<p>' in fragments else 0
             ep_tag = fragments.index('</p>') if '</p>' in fragments else None
             fragments = fragments[bp_tag+1:ep_tag]
@@ -540,6 +565,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
         if seq in '`~' and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
+            if stack[-1][0] == 'li':
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
             lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
             stack.append(('fenced', [], i, (seq, w2, lang)))
             i = stop
@@ -566,21 +593,21 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
                 if len(stack) >= 2 and stack[-2][0] == 'ul':
-                    offset = stack[-2][3]
+                    offset = stack[-2][3][0]
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ul', [], i, offset+ix-i0))
+                stack.append(('ul', [], i, (offset+ix-i0, None)))
             stack.append(('li', [], i, 1))
             stack.append(('p', [], i, None))
-        elif seq == 'digits' and md[i] == '.' and i+1<len(md) and md[i+1] in ' \t':
+        elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
                 if len(stack) >= 2 and stack[-2][0] == 'ol':
-                    offset = stack[-2][3]
+                    offset = stack[-2][3][0]
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ol', [], i, offset+ix-i0))
+                stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]))))
             stack.append(('li', [], i, 1))
             stack.append(('p', [], i, None))
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
@@ -655,7 +682,7 @@ def detect_link(md, start, stop):
     i = start
     res = {}
     tmp = [('tmp', [''], 0)]
-    tmp_playload = tmp[0][1]
+    tmp_payload = tmp[0][1]
     url_b = 0
     url_e = 0
     link_b = 0
@@ -669,16 +696,18 @@ def detect_link(md, start, stop):
         if search == "SQUARE":
             if md[i] == ']':
                 i = payload(md, start, i, tmp)
+                dprint('PAY', tmp_payload)
+                content = '' if len(tmp_payload) < 2 else tmp_payload[1]
                 if md[i] == '(':
-                    res['square'] = tmp_playload[1]
+                    res['square'] = content
                     search = "URL"
                 elif md[i] == '[':
-                    res['square'] = tmp_playload[1]
+                    res['square'] = content
                     link_b = i+1
                     search = "LINK"
                 else:
-                    res['square'] = tmp_playload[1]
-                    res['link_id'] = tmp_playload[1]
+                    res['square'] = content
+                    res['link_id'] = content
                     return res, i
         elif search == "LINK":
             if md[i] == ']':
@@ -939,7 +968,9 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         t = s.rstrip('#')
         if t and t[-1] == ' ':
             s = s.rstrip('#').rstrip(' ')
-    last_content.append(s)
+
+    if s:
+        last_content.append(s)
 
     if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
@@ -1052,11 +1083,16 @@ def transform(md: str, start: int = 0) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("file")
+    import argparse
+    import sys
+    parser = argparse.ArgumentParser(description="Transform Markdown into HTML")
+    parser.add_argument("input", nargs="?", default="-", help="Input file name or - for stdin")
     args = parser.parse_args()
-    with open(args.file, encoding="utf-8") as f:
-        print(transform(f.read()))
+    if args.input == "-":
+        f = sys.stdin
+    else:
+        f = open(args.input, "r", encoding="utf-8")
+    print(transform(f.read()))
 
 
 if __name__ == "__main__":
