@@ -47,6 +47,7 @@ section summary table tbody td tfoot th thead title tr track ul
 
 SP = ' \xa0\n'
 PUNCTUATION = '_-(){}[]"\'.,!?@#$€£'
+SEPS = SP + PUNCTUATION
 
 patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -728,8 +729,12 @@ def detect_link(md, start, stop):
         if search == "SQUARE":
             if md[i] == ']':
                 i = payload(md, start, i, tmp)
-                dprint('PAY', tmp_payload)
-                content = '' if len(tmp_payload) < 2 else tmp_payload[1]
+                j = 0
+                while j < len(tmp_payload):
+                    if tmp_payload[j]:
+                        break
+                    j += 1
+                content = '' if len(tmp_payload) < 2 else ''.join(tmp_payload[j:])
                 if md[i] == '(':
                     res['square'] = content
                     search = "URL"
@@ -819,6 +824,34 @@ def check_span(md: str, tok: int, i: int):
             return None
 
 
+def is_flank(md: str, pattern: str, i: int, side: str):
+    """."""
+    inner = i+1 if side == 'LEFT' else i-1-len(pattern)+1
+    outer = i-1-len(pattern)+1 if side == 'LEFT' else i+1
+    if (
+            md[i+1] != pattern[0]
+            and md[inner] not in SP
+            and (not md[inner] in PUNCTUATION or (md[inner] in PUNCTUATION and md[outer] in SEPS))
+    ):
+        return True
+    return False
+
+
+def is_underscore_del(md: str, pattern: str, i: int, side: str):
+    """."""
+    opp_side = 'RIGHT' if side == 'LEFT' else 'LEFT'
+    inner = is_flank(md, pattern, i, side)
+    outer = is_flank(md, pattern, i, opp_side)
+    p = i-1-len(pattern)+1 if side == 'LEFT' else i+1
+    if (
+        md[i+1] != pattern[0]
+        and inner
+        and (not outer or (outer and md[p] in PUNCTUATION))
+    ):
+        return True
+    return False
+
+
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
     #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
@@ -867,7 +900,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     while idx < len(markers):
         i = markers[idx]
-        dprint('        | ', i, md[i], stack[-1])
+        dprint('        | ', i, md[i], stl, stack[-1])
         if i < tok:
             idx += 1
             continue
@@ -903,19 +936,26 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok = close_element(md, tok, i, stack, 3)
             tok = close_element(md, tok, i, stack, 3)
             tok -= 2
-        elif stl and i > 0 and md[i-1:i+1] in ['**','__'] and md[i+1] != md[i] and stack[-1][0] in ('strong', 'em'):
+        elif stl and i > 0 and md[i-1:i+1] in ['**'] and stack[-1][0] in ('strong') and is_flank(md, '**', i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 2)
             tok -= 1
-        elif stl and md[i] in ['*'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong') and md[i-1] not in SP and not (md[i-1] in PUNCTUATION and md[i+1].isalpha()):
-            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
-                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
-                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
+        elif stl and i > 0 and md[i-1:i+1] in ['__'] and stack[-1][0] in ('strong') and is_underscore_del(md, '__', i, 'RIGHT'):
+            tok = close_element(md, tok, i, stack, 2)
+            tok -= 1
+        elif stl and md[i] in ['*'] and md[i-1] != '*' and stack[-1][0] in ('em') and is_flank(md, md[i], i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 1)
-        elif stl and md[i] in ['_'] and md[i+1] != md[i] and stack[-1][0] in ('em', 'strong') and md[i-1] not in SP and md[i+1] in SP:
-            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
-                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
-                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
+#        elif stl and md[i] in ['*'] and stack[-1][0] in ('strong') and is_flank(md, md[i], i, 'RIGHT'):
+#            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
+#                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
+#                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
+#                tok = close_element(md, tok, i, stack, 1)
+        elif stl and md[i] in ['_'] and md[i-1] != '_' and stack[-1][0] in ('em') and is_underscore_del(md, md[i], i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 1)
+#        elif stl and md[i] in ['_'] and stack[-1][0] in ('strong') and is_underscore_del(md, md[i], i, 'RIGHT'):
+#            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
+#                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
+#                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
+#                tok = close_element(md, tok, i, stack, 1)
         elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
             stl = True
             tok = close_element(md, tok, i, stack, 3)
@@ -930,13 +970,13 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP:
             tok = open_element(md, tok, i, stack, 3, 'em', None)
             tok = open_element(md, tok, i, stack, 3, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['**'] and md[i+1] != '*' and md[i+1] not in SP:
+        elif stl and i > start and md[i-1:i+1] in ['**'] and is_flank(md, '**', i, 'LEFT'):
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['__'] and md[i+1] != '_' and md[i+1] not in SP and md[i-2] in SP:
+        elif stl and i > start and md[i-1:i+1] in ['__'] and is_underscore_del(md, '__', i, 'LEFT'):
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and md[i] in ['*'] and md[i+1] != '*' and md[i+1] not in SP and not (md[i+1] in PUNCTUATION and md[i-1].isalpha()):
+        elif stl and md[i] == '*'  and is_flank(md, md[i], i, 'LEFT'):
             tok = open_element(md, tok, i, stack, 1, 'em', None)
-        elif stl and md[i] in ['_'] and md[i+1] != '_' and md[i+1] not in SP and md[i-1] in SP and not (md[i+1] in PUNCTUATION and md[i-1].isalpha()):
+        elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT'):
             tok = open_element(md, tok, i, stack, 1, 'em', None)
         elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
