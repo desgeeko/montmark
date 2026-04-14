@@ -297,7 +297,7 @@ def check_html_block(md: str, start, stop):
     return (condition, ends)
 
 
-def indentation(md: str, start: int = 0) -> tuple:
+def indentation_OLD(md: str, start: int = 0) -> tuple:
     """Find & expand spaces and tabs."""
     i = start
     found, w = False, 0
@@ -311,6 +311,24 @@ def indentation(md: str, start: int = 0) -> tuple:
             break
         i += 1
     return start, i, found, w
+
+
+def indentation(md: str, start: int, extra: int = 0) -> tuple:
+    """Find & expand spaces and tabs."""
+    i = start
+    found = False
+    w = 4 if extra else 0
+    while i < len(md):
+        found = True if not found and md[i] in ' \t' else found
+        if md[i] == ' ':
+            w += 1
+        elif md[i] == '\t':
+            w += 4 - (w % 4)
+        else:
+            break
+        i += 1
+    return start, i, found, w - extra
+
 
 def prefix(md: str, start: int = 0) -> tuple:
     """Isolate digits at start."""
@@ -356,7 +374,7 @@ def html_text(element: str, content, params, last):
         text = content[0]['square']
         url = content[0].get("url")
         link_id = content[0].get("link_id")
-        title = content[0].get("title", '')
+        title = content[0].get("title", '').translate(HE_TR)
         title_attr = f' title="{title}"' if title else ''
         if element == 'a':
             html = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
@@ -468,6 +486,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
                 i = forward_cursor(md, i0, offset)
+                dprint(f'        | forward to {i}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
@@ -543,8 +562,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 broken = True
             else:
                 node_cursor += 1
-                i = i0 + 3
-
+                #i = i0 + 4 - 1
+                i = ii - 1
         if broken:
             break
         elif node_cursor >= len(stack):
@@ -556,7 +575,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     for _ in range(nb_exited):
         element, fragments, rb, params = stack.pop()
         if element == 'li' and params == 1:
-            bp_tag = fragments.index('<p>') if '<p>' in fragments else 0
+            bp_tag = fragments.index('<p>') if '<p>' in fragments else -1
             ep_tag = fragments.index('</p>') if '</p>' in fragments else None
             fragments = fragments[bp_tag+1:ep_tag]
             dprint(f'        | Removing p tag in unique block of li')
@@ -593,9 +612,10 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     while i < len(md):
         node, accu, _, _ = stack[-1]
         i0 = i
-        _, ii, sp_or_tabs, w = indentation(md, i0)
+        extra = 2 if i0 > 0 and md[i0-1] == '\t' else 0
+        _, ii, sp_or_tabs, w = indentation(md, i0, extra)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w2={w2} ii={ii} seq=@{seq}@  i={i}')
+        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
         if seq in '`~' and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
@@ -612,7 +632,11 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         elif sp_or_tabs and w >= 4 and stack[-1][0] not in ['p', 'p_']:
             if stack[-1][0] == 'li':
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
-            stack.append(('indented', [], i, None))
+            if stack[-1][0] == 'blockquote':
+                extra = 2 if i0 > 0 and md[i0+1] == '\t' else 0
+                _, ii, sp_or_tabs, w = indentation(md, i0+1, extra)
+            add_spaces = w - 4
+            stack.append(('indented', [], i, add_spaces))
             if ii - i0 > 4:
                 ii = i0 + 4
             return ii
@@ -631,8 +655,9 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ul', [], i, (offset+ix-i0, None)))
-            stack.append(('li', [], i, 1))
-            stack.append(('p', [], i, None))
+            stack.append(('li', [], i, 0))
+            #stack.append(('p', [], i, None))
+            i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
                 if len(stack) >= 2 and stack[-2][0] == 'ol':
@@ -641,8 +666,9 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]))))
-            stack.append(('li', [], i, 1))
-            stack.append(('p', [], i, None))
+            stack.append(('li', [], i, 0))
+            #stack.append(('p', [], i, None))
+            i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             dprint('        | html block', typ)
             condition, ends = typ
@@ -829,6 +855,7 @@ def is_flank(md: str, pattern: str, i: int, side: str):
     inner = i+1 if side == 'LEFT' else i-1-len(pattern)+1
     outer = i-1-len(pattern)+1 if side == 'LEFT' else i+1
     if (
+            #(md[i+1] != pattern[0] or side == 'RIGHT') *foo**
             md[i+1] != pattern[0]
             and md[inner] not in SP
             and (not md[inner] in PUNCTUATION or (md[inner] in PUNCTUATION and md[outer] in SEPS))
@@ -932,40 +959,19 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 tok = i+1
             idx += 1
             continue
-        if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == ('em') and stack[-1][0] == ('strong'):
+        if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == 'em' and stack[-1][0] == 'strong':
             tok = close_element(md, tok, i, stack, 3)
             tok = close_element(md, tok, i, stack, 3)
             tok -= 2
-        elif stl and i > 0 and md[i-1:i+1] in ['**'] and stack[-1][0] in ('strong') and is_flank(md, '**', i, 'RIGHT'):
+        elif stl and i > 0 and md[i-1:i+1] == '**' and stack[-1][0] == 'strong' and is_flank(md, '**', i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 2)
             tok -= 1
-        elif stl and i > 0 and md[i-1:i+1] in ['__'] and stack[-1][0] in ('strong') and is_underscore_del(md, '__', i, 'RIGHT'):
+        elif stl and i > 0 and md[i-1:i+1] == '__' and stack[-1][0] == 'strong' and is_underscore_del(md, '__', i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 2)
             tok -= 1
-        elif stl and md[i] in ['*'] and md[i-1] != '*' and stack[-1][0] in ('em') and is_flank(md, md[i], i, 'RIGHT'):
+        elif stl and md[i] == '*' and md[i-1] != '*' and stack[-1][0] == 'em' and is_flank(md, md[i], i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 1)
-#        elif stl and md[i] in ['*'] and stack[-1][0] in ('strong') and is_flank(md, md[i], i, 'RIGHT'):
-#            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
-#                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
-#                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
-#                tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i] in ['_'] and md[i-1] != '_' and stack[-1][0] in ('em') and is_underscore_del(md, md[i], i, 'RIGHT'):
-            tok = close_element(md, tok, i, stack, 1)
-#        elif stl and md[i] in ['_'] and stack[-1][0] in ('strong') and is_underscore_del(md, md[i], i, 'RIGHT'):
-#            if stack[-1][0] == 'strong' and stack[-2][0] == 'em':
-#                stack[-2] = 'strong', stack[-2][1], stack[-2][2], None
-#                stack[-1] = 'em', stack[-1][1], stack[-1][2], None
-#                tok = close_element(md, tok, i, stack, 1)
-        elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
-            stl = True
-            tok = close_element(md, tok, i, stack, 3)
-            tok -= 2
-        elif md[i-1:i+1] == '``' and stack[-1][0] == 'code' and stack[-1][3] == 2:
-            stl = True
-            tok = close_element(md, tok, i, stack, 2)
-            tok -= 1
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
-            stl = True
             tok = close_element(md, tok, i, stack, 1)
         elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP:
             tok = open_element(md, tok, i, stack, 3, 'em', None)
@@ -978,6 +984,17 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok = open_element(md, tok, i, stack, 1, 'em', None)
         elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT'):
             tok = open_element(md, tok, i, stack, 1, 'em', None)
+        elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
+            stl = True
+            tok = close_element(md, tok, i, stack, 3)
+            tok -= 2
+        elif md[i-1:i+1] == '``' and stack[-1][0] == 'code' and stack[-1][3] == 2:
+            stl = True
+            tok = close_element(md, tok, i, stack, 2)
+            tok -= 1
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
+            stl = True
+            tok = close_element(md, tok, i, stack, 1)
         elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
@@ -1046,6 +1063,10 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     last_content = stack[-1][1]
 
     s = md[tok:stop].translate(HE_TR)
+    if stack[-1][0] == 'indented' and stack[-1][3]:
+        s = ' ' * stack[-1][3] + s
+        stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], None)
+
     if last_elt[0]  == 'h':
         s = s.lstrip(' ').rstrip(' ')
         t = s.rstrip('#')
