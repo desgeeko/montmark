@@ -475,7 +475,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 i = i0 - 1
         elif node == 'li':
             offset, _ = stack[node_cursor-1][3]
-            dprint(f'        | li with offset {offset}')
+            dprint(f'        | li with offset {offset}', stack)
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 if i-start < offset:
                     broken = True
@@ -495,8 +495,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 node_cursor += 1
                 i -= 1
         elif node in ['ul', 'ol']:
-            #if md[i] in '>':
-            #    broken = True
             if seq == '#':
                 i = ii
                 broken = True
@@ -574,11 +572,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     nb_exited = len(stack) - node_cursor
     for _ in range(nb_exited):
         element, fragments, rb, params = stack.pop()
-        if element == 'li' and params == 1:
-            bp_tag = fragments.index('<p>') if '<p>' in fragments else -1
-            ep_tag = fragments.index('</p>') if '</p>' in fragments else None
-            fragments = fragments[bp_tag+1:ep_tag]
-            dprint(f'        | Removing p tag in unique block of li')
+        if stack[-1][0] == 'li' and stack[-1][3] == 2:
+            stack[-1][1].insert(0, '<p>')
+            stack[-1][1].insert(0, '\n')
+            stack[-1][1].append('</p>')
+            stack[-1][1].append('\n')
         if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
             offset = 0
@@ -619,7 +617,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
 
         if seq in '`~' and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
+                nb = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
             stack.append(('fenced', [], i, (seq, w2, lang)))
             i = stop
@@ -630,12 +629,13 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             i = i0
             return i
         elif sp_or_tabs and w >= 4 and stack[-1][0] not in ['p', 'p_']:
-            if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
             if stack[-1][0] == 'blockquote':
                 extra = 2 if i0 > 0 and md[i0+1] == '\t' else 0
                 _, ii, sp_or_tabs, w = indentation(md, i0+1, extra)
             add_spaces = w - 4
+            if stack[-1][0] == 'li':
+                nb = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             stack.append(('indented', [], i, add_spaces))
             if ii - i0 > 4:
                 ii = i0 + 4
@@ -645,7 +645,8 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             return i+1
         elif md[i] == '>':
             if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
+                nb = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             stack.append(('blockquote', [], i, None))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
             if stack[-1][0] != 'ul':
@@ -656,7 +657,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ul', [], i, (offset+ix-i0, None)))
             stack.append(('li', [], i, 0))
-            #stack.append(('p', [], i, None))
             i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
@@ -667,7 +667,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 _, ix, _, _ = indentation(md, i+1)
                 stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]))))
             stack.append(('li', [], i, 0))
-            #stack.append(('p', [], i, None))
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             dprint('        | html block', typ)
@@ -679,9 +678,16 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack.append(('html', [md[i0:stop]], i, condition))
             return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
-            if stack[-1][0] == 'li':
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
-            stack.append(('p', [], ii, None))
+            nb = stack[-1][3] + 1 if stack[-1][3] else 1
+            if stack[-1][0] == 'li' and stack[-1][3] == 0:
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+                stack.append(('p_', [], ii, None))
+            elif stack[-1][0] == 'li' and stack[-1][3] == 1:
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+                stack.append(('p', [], ii, None))
+            else:
+                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+                stack.append(('p', [], ii, None))
             return ii
         else:
             return ii
