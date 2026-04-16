@@ -362,7 +362,7 @@ def html_text(element: str, content, params, last):
                     break
                 i -= 1
             content = content[:i+1]
-        lang = f' class="language-{params[2]}"' if element == 'fenced' and params[2] else ''
+        lang = f' class="language-{params[2].replace('\\', '')}"' if element == 'fenced' and params[2] else ''
         if content:
             content.append('\n')
         content.insert(0, f'<pre><code{lang}>')
@@ -466,7 +466,8 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
             elif md[i] in '-.' and md[i+1] in ' \t':
                 broken = True
                 if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
-                    i = start + stack[-3][3][0]
+                    #i = start + stack[-3][3][0]
+                    i = ii
                 else:
                     i = i0
             else:
@@ -475,9 +476,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 i = i0 - 1
         elif node == 'li':
             offset, _ = stack[node_cursor-1][3]
-            dprint(f'        | li with offset {offset}', stack)
+            dprint(f'        | li with offset {offset}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
-                if i-start < offset:
+                _, _, _, w = indentation(md, start)
+                #if i-start < offset:
+                if w < offset:
                     broken = True
                     i = ii
                 else:
@@ -798,7 +801,7 @@ def detect_link(md, start, stop):
                 url = md[url_b+1:i]
                 if '\n' in url:
                     return None, start
-                url = quote(url)
+                url = quote(url.replace('\\', ''), safe=":/?=&*")
                 res['url'] = url
                 i += 1
                 search = "TITLE"
@@ -806,12 +809,12 @@ def detect_link(md, start, stop):
                 if md[i] in '"\'(' and md[i-1] not in ' \n':
                     url_e = i
                 elif md[i] in ')"\'(':
-                    url = md[url_b:url_e+1]
+                    url = md[url_b:url_e+1].replace('\\', '')
                     if ' ' in url:
                         return None, start
                     elif '\n' in url:
                         return None, start
-                    url = quote(url)
+                    url = quote(url, safe=":/?=&*")
                     res['url'] = url
                     i -= 1
                     search = "TITLE"
@@ -827,7 +830,7 @@ def detect_link(md, start, stop):
                 title_b = i+1
                 title_m = MATCHING[md[i]]
             elif title_b and md[i] == title_m:
-                res['title'] = md[title_b:i]
+                res['title'] = md[title_b:i].replace('\\', '')
                 _, i, _, _ = indentation(md, i+1)
                 if md[i] == ')':
                     return res, i+1
@@ -933,14 +936,14 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
 
     while idx < len(markers):
         i = markers[idx]
-        dprint('        | ', i, md[i], stl, stack[-1])
+        dprint('        | ', i, md[i], tok, stl, stack[-1][0])
         if i < tok:
             idx += 1
             continue
         if i == prev_i+1:
             idx += 1
             continue
-        if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code']:
+        if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code', 'span']:
             c = md[i+1]
             stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
             tok = i+2
@@ -1001,10 +1004,10 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif i> 2 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
+        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
-        elif i> 1 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
+        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
         elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] != 'code':
@@ -1020,8 +1023,9 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 stl = True
             elif typ == 'autolink':
                 txt = md[tok+1:i]
-                url = txt.translate(HE_TR)
-                stack[-1] = ('a', [{'square': url, 'url': url}], None, '')
+                descr = txt.translate(HE_TR)
+                url = quote(txt.translate(HE_TR), safe=":/?=&*")
+                stack[-1] = ('a', [{'square': descr, 'url': url}], None, '')
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
             elif typ == 'automail':
@@ -1135,7 +1139,7 @@ def transform(md: str, start: int = 0) -> str:
             if stack[-1][0] != 'p':
                 link_id, url, title, eoli = check_link_id(md, i)
                 if link_id:
-                    links[link_id.upper()] = (url, title)
+                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*"), title.replace('\\', ''))
                     i = eoli
                     continue
             i = structure(md, i, eol, stack)
