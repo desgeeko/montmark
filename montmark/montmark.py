@@ -27,7 +27,6 @@ import os
 import html
 from urllib.parse import quote
 
-
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
 MATCHING = {'"': '"', "'": "'", "(": ")"}
@@ -146,7 +145,7 @@ def check_link_id(md: str, start = 0):
 
     c = md.find('\n', i)
     eol = c if c != -1 else len(md)
-    return (link_id, url, title, eol)
+    return (link_id, html.unescape(url), html.unescape(title), eol)
 
 
 def check_setext(md: str, start = 0):
@@ -155,6 +154,7 @@ def check_setext(md: str, start = 0):
     nb = 0
     i = start
     sp = 0
+    trail = False
     c = md.find('\n', i)
     eol = c if c != -1 else len(md)
     while i < eol:
@@ -170,7 +170,9 @@ def check_setext(md: str, start = 0):
                 return False, -1
             i += 1
             continue
-        if md[i] != tok:
+        if tok and md[i] in ' \t':
+            trail = True
+        if trail and md[i] not in ' \t':
             return False, -1
         elif md[i] == tok:
             nb += 1
@@ -362,10 +364,10 @@ def html_text(element: str, content, params, last):
                     break
                 i -= 1
             content = content[:i+1]
-        lang = f' class="language-{params[2].replace('\\', '')}"' if element == 'fenced' and params[2] else ''
+        lg = f' class="language-{html.unescape(params[2].replace('\\', ''))}"' if element == 'fenced' and params[2] else ''
         if content:
             content.append('\n')
-        content.insert(0, f'<pre><code{lang}>')
+        content.insert(0, f'<pre><code{lg}>')
         if last != '\n':
             content.insert(0, '\n')
         content.append(f'</code></pre>')
@@ -377,10 +379,10 @@ def html_text(element: str, content, params, last):
         title = content[0].get("title", '').translate(HE_TR)
         title_attr = f' title="{title}"' if title else ''
         if element == 'a':
-            html = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
+            ht = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
         else:
-            html = f'<{element} src="{url}" alt="{text}"{title_attr} />'
-        content = [html]
+            ht = f'<{element} src="{url}" alt="{text}"{title_attr} />'
+        content = [ht]
     elif element in ['ol']:
         ol_start = '' if params[1] == 1 else f' start="{params[1]}"'
         content.insert(0, f'<{element}{ol_start}>')
@@ -435,13 +437,19 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     hr, eol = check_hr(md, i)
     setext, eol = check_setext(md, i)
 
-    if setext:
-        if stack[-1][0] in ['p', 'p_']:
-            elt = 'h1' if setext == '=' else 'h2'
-            if stack[-1][1][-1] == '<br />':
-                stack[-1][1].pop()
-            stack[-1] = (elt, stack[-1][1], stack[-1][2], None)
-            return eol
+    if hr:
+        close = True
+
+    if setext and stack[-1][0] in ['p', 'p_', 'span'] and stack[-2][0] not in ['blockquote', 'li']:
+        elt = 'h1' if setext == '=' else 'h2'
+        if stack[-1][1][-1] == '<br />':
+            stack[-1][1].pop()
+        content = stack[-1][1] if stack[-1][1][-1] not in '\t' else stack[-1][1][:-1]
+        cp = stack[-1][2]
+        if stack[-1][0] == 'span':
+            stack.pop()
+        stack[-1] = (elt, content, cp, None)
+        return eol
 
     while i < len(md) and not close:
         node, _, _, params = stack[node_cursor]
@@ -570,6 +578,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         elif node_cursor >= len(stack):
             return i+1
         i += 1
+
     if close:
         node_cursor = 1
     nb_exited = len(stack) - node_cursor
@@ -626,7 +635,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             stack.append(('fenced', [], i, (seq, w2, lang)))
             i = stop
             return i
-        elif md[i] in '\r\n':
+        elif md[i] in '\r\n' and seq not in '#`':
             return i
         elif stack[-1][0] in ['fenced', 'indented']:
             i = i0
@@ -643,7 +652,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             if ii - i0 > 4:
                 ii = i0 + 4
             return ii
-        elif seq  == '#' and md[i] in ' \t' and w2 <= 6:
+        elif seq  == '#' and md[i] in ' \t\n' and w < 4 and w2 <= 6:
             stack.append((f'h{w2}', [], i, None))
             return i+1
         elif md[i] == '>':
@@ -814,7 +823,7 @@ def detect_link(md, start, stop):
                         return None, start
                     elif '\n' in url:
                         return None, start
-                    url = quote(url, safe=":/?=&*")
+                    url = quote(html.unescape(url), safe=":/?=&*")
                     res['url'] = url
                     i -= 1
                     search = "TITLE"
@@ -830,7 +839,7 @@ def detect_link(md, start, stop):
                 title_b = i+1
                 title_m = MATCHING[md[i]]
             elif title_b and md[i] == title_m:
-                res['title'] = md[title_b:i].replace('\\', '')
+                res['title'] = html.unescape(md[title_b:i].replace('\\', ''))
                 _, i, _, _ = indentation(md, i+1)
                 if md[i] == ')':
                     return res, i+1
@@ -952,11 +961,13 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             idx += 1
             continue
         if md[i] == '&' and stack[-1][0] not in ['indented', 'code', 'span']:
-            c = '&'
             f = md.find(';', i+2, stop)
-            if f > -1:
+            if f > -1 and ' ' not in md[i:f+1]:
                 text = md[i:f+1]
-                u_text = html.unescape(text)
+                if len(text) > 3 and text[2:-1].isdigit() and int(text[2:-1]) > 1114111:
+                    u_text = text
+                else:
+                    u_text = html.unescape(text)
                 if len(u_text) == len(text):
                     stack[-1][1].append(md[tok:i] + basic_entity_substitution('&') + text[1:])
                     tok = f+1
@@ -964,7 +975,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                     stack[-1][1].append(md[tok:i] + basic_entity_substitution(u_text))
                     tok = f+1
             else:
-                stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
+                stack[-1][1].append(md[tok:i] + basic_entity_substitution(md[i]))
                 tok = i+1
             idx += 1
             continue
@@ -1082,6 +1093,8 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         t = s.rstrip('#')
         if t and t[-1] == ' ':
             s = s.rstrip('#').rstrip(' ')
+        elif not t and not (last_content and last_content[0] and last_content[0][-1] == '#'):
+            s = ''
 
     if s:
         last_content.append(s)
