@@ -299,22 +299,6 @@ def check_html_block(md: str, start, stop):
     return (condition, ends)
 
 
-def indentation_OLD(md: str, start: int = 0) -> tuple:
-    """Find & expand spaces and tabs."""
-    i = start
-    found, w = False, 0
-    while i < len(md):
-        found = True if not found and md[i] in ' \t' else found
-        if md[i] == ' ':
-            w += 1
-        elif md[i] == '\t':
-            w += 4
-        else:
-            break
-        i += 1
-    return start, i, found, w
-
-
 def indentation(md: str, start: int, extra: int = 0) -> tuple:
     """Find & expand spaces and tabs."""
     i = start
@@ -430,6 +414,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     i = start
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
+    p_ending = False
 
     if len(stack) == 1:
         return i
@@ -461,7 +446,11 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         if node in ['em', 'strong', 'code']:
             return i
         elif node in ['p', 'p_']:
-            if hr or md[i] in '\r\n' or (seq == '#' and w < 4):
+            if hr or (seq == '#' and w < 4):
+                broken = True
+                i = i0
+            elif md[i] in '\r\n':
+                p_ending = True
                 broken = True
                 i = i0
             elif md[i] == '<' and (typ := check_html_block(md, i, stop)):
@@ -571,8 +560,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                 broken = True
             else:
                 node_cursor += 1
-                #i = i0 + 4 - 1
-                i = ii - 1
+                i = i0 + 4 - 1
         if broken:
             break
         elif node_cursor >= len(stack):
@@ -583,12 +571,14 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         node_cursor = 1
     nb_exited = len(stack) - node_cursor
     for _ in range(nb_exited):
+        if stack[-1][0] in ['p_'] and p_ending:
+            stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
+        if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
+            stack[-1][1][0] = ''
+            stack[-1][1][1] = ''
+            stack[-1][1][-2] = ''
+            stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
-        if stack[-1][0] == 'li' and stack[-1][3] == 2:
-            stack[-1][1].insert(0, '<p>')
-            stack[-1][1].insert(0, '\n')
-            stack[-1][1].append('</p>')
-            stack[-1][1].append('\n')
         if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
             offset = 0
@@ -661,7 +651,13 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             stack.append(('blockquote', [], i, None))
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
+#            if stack[-1][0] == 'li':
+#                nb = stack[-1][3] + 1 if stack[-1][3] else 1
+#                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             if stack[-1][0] != 'ul':
+                if stack[-1][0] == 'li':
+                    nb = stack[-1][3] + 1 if stack[-1][3] else 1
+                    stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
                 if len(stack) >= 2 and stack[-2][0] == 'ul':
                     offset = stack[-2][3][0]
                 else:
@@ -693,13 +689,13 @@ def structure(md: str, start: int, stop: int, stack) -> list:
             nb = stack[-1][3] + 1 if stack[-1][3] else 1
             if stack[-1][0] == 'li' and stack[-1][3] == 0:
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p_', [], ii, None))
+                stack.append(('p_', [], ii, False))
             elif stack[-1][0] == 'li' and stack[-1][3] == 1:
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p', [], ii, None))
+                stack.append(('p', [], ii, False))
             else:
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p', [], ii, None))
+                stack.append(('p', [], ii, False))
             return ii
         else:
             return ii
