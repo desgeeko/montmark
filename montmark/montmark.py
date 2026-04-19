@@ -133,18 +133,24 @@ def check_link_id(md: str, start = 0):
     i += 1
 
     url, i = extract_destination(md, i, len(md))
-    if not url:
+    if not url or md[i] not in ' \t\n':
         return False, False, False, -1
     if url[0] == '<' and url[-1] == '>':
         url = url[1:-1]
+    c = md.find('\n', i)
+    eol = c if c != -1 else len(md)
 
     ret = extract_title(md, i, len(md))
     if ret is None:
         return False, False, False, -1
-    title, i = ret
-
-    c = md.find('\n', i)
-    eol = c if c != -1 else len(md)
+    title, i2 = ret
+    if title:
+        c = md.find('\n', i2)
+        eol = c if c != -1 else len(md)
+        i = i2
+    f = indentation(md, i+1, eol)[1]
+    if f < eol:
+        return False, False, False, -1
     return (link_id, html.unescape(url), html.unescape(title), eol)
 
 
@@ -260,7 +266,7 @@ def check_html_block(md: str, start, stop):
              elif closing and md[i+2+l] in ' \t>\n':
                 cond_6 = True
     b = md.find('>', i, stop)
-    if b > i+1 and md[i+1].isalpha():
+    if b > i+1 and (md[i+1].isalpha() or md[i+1] == '/' and md[i+2].isalpha()):
         _, c, _, _ = indentation(md, b+1)
         if (b == stop or c == stop) and ':' not in md[i:stop] and '@' not in md[i:stop]:
             cond_7 = True
@@ -279,7 +285,7 @@ def check_html_block(md: str, start, stop):
         condition = 3
         if md.find('-->', i, stop) > -1:
             ends = True
-    elif i+3 < len(md) and md[i:i+2] == '<!' and md[i].isalpha():
+    elif i+3 < len(md) and md[i:i+2] == '<!' and md[i+2].isalpha():
         condition = 4
         if md.find('-->', i, stop) > -1:
             ends = True
@@ -379,6 +385,10 @@ def html_text(element: str, content, params, last):
             content.insert(0, '\n')
     elif element in ['br']:
         content[-1] = f'<{element} />'
+    #elif element in ['html']:
+    #    content.insert(0, '\n')
+    #    if content[-1] != '\n':
+    #        content.append('\n')
     elif element in ['html', 'raw']:
         pass
     else:
@@ -539,14 +549,15 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
                     stack[-1][1].append('\n')
                 line = md[i:stop].lower()
                 for t in TAGS_CONDITION_1:
-                    if t in line:
+                    if t in line and '</' + t + '>' in line:
+                        stack[-1][1].append('\n')
                         stack[-1][1].append(md[i:stop])
                         i = stop
                         broken = True
                         break
-                    else:
-                        node_cursor += 1
-                        i = i0-1
+                if not broken:
+                    node_cursor += 1
+                    i = i0-1
             elif params > 1 and params < 6:
                 if md[ii] == '\n':
                     stack[-1][1].append('\n')
@@ -576,13 +587,16 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         node_cursor = 1
     nb_exited = len(stack) - node_cursor
     for _ in range(nb_exited):
-        if stack[-1][0] in ['p_'] and p_ending:
+        if stack[-1][0] == 'p_' and p_ending:
             stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
         if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
             stack[-1][1][0] = ''
             stack[-1][1][1] = ''
             stack[-1][1][-2] = ''
             stack[-1][1][-1] = ''
+        if stack[-1][0] == 'p':
+            if stack[-1][1][-1] == '<br />':
+                stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
         if element in ['em', 'strong', 'code']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
