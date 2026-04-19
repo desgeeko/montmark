@@ -732,7 +732,12 @@ def open_element(md, tok, i, stack, offset, element, params, init = None):
 
 def close_element(md, tok, i, stack, offset):
     """Flush segment and close current element."""
-    stack[-1][1].append(md[tok:i-offset+1])
+    b, e = tok, i
+    dprint('DDDDD', b, e, offset)
+    if stack[-1][0] == 'code' and i-tok>2 and md[tok] == ' ' and md[i-offset] == ' ':
+        b, e = tok+1, i-1
+    dprint('DDDDD', b, e, offset)
+    stack[-1][1].append(md[b:e-offset+1])
     prev = stack.pop()
     current = stack[-1][1]
     last = current[-1] if current else ''
@@ -784,6 +789,8 @@ def detect_link(md, start, stop):
         return None, start
     while i < stop:
         if search == "SQUARE":
+            if md[i] == '`':
+                return None, start
             if md[i] == ']':
                 i = payload(md, start, i, tmp)
                 j = 0
@@ -1029,7 +1036,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             stl = True
             tok = close_element(md, tok, i, stack, 2)
             tok -= 1
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
+        elif md[i:i+1] == '`' and md[i-1] != md[i] and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
         elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
@@ -1038,7 +1045,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
         elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] != 'code':
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span']:
             tok = open_element(md, tok, i, stack, 1, 'code', 1)
             stl = False
         elif md[i:i+1] == '>' and stack[-1][0] == 'span':
@@ -1070,7 +1077,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 idx = markers.index(cp)
                 bypass.append(idx)
                 continue
-        elif md[i:i+1] == '<' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
+        elif md[i:i+1] == '<'  and stack[-1][0] != 'code' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
