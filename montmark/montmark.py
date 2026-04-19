@@ -415,7 +415,6 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
     p_ending = False
-
     if len(stack) == 1:
         return i
 
@@ -444,12 +443,12 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node in ['em', 'strong', 'code']:
-            return i
+            return i0
         elif node in ['p', 'p_']:
-            if hr or (seq == '#' and w < 4):
+            if hr or (seq == '#' and w < 4) or (seq == '`' and w2 >= 3):
                 broken = True
                 i = i0
-            elif md[i] in '\r\n':
+            elif md[ii] in '\r\n':
                 p_ending = True
                 broken = True
                 i = i0
@@ -504,17 +503,23 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
+                if md[i+1] == ' ':
+                    i += 1
             elif node_cursor == len(stack) - 2 and md[ii] not in '\n':
                 node_cursor += 1
                 i -= 1
             else:
                 broken = True
         elif node == 'fenced':
-            if params[0] == seq and params[1] <= w2 and not md[i:stop].lstrip(' '):
+            if w < 4 and params[0] == seq and params[1] <= w2 and not md[i:stop].lstrip(' '):
                 broken = True
                 i = stop
             else:
-                i = i0 - 1
+                if w >= params[3]:
+                    o = params[3]
+                else:
+                    o = w
+                i = i0 - 1 + o
                 node_cursor += 1
         elif node in ['hr']:
             i = i0 - 1
@@ -601,7 +606,7 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     sp_or_tabs, w1 = False, 0
     seq, w2 = '', 0
     phase = ''
-    if stack[-1][0][:6] == 'fenced':
+    if stack[-1][0] == 'fenced':
         return i
     hr, eol = check_hr(md, i)
     if hr:
@@ -617,12 +622,12 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if seq in '`~' and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
+        if seq in '`~' and w < 4 and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
                 nb = stack[-1][3] + 1 if stack[-1][3] else 1
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
-            stack.append(('fenced', [], i, (seq, w2, lang)))
+            stack.append(('fenced', [], i, (seq, w2, lang, w)))
             i = stop
             return i
         elif md[i] in '\r\n' and seq not in '#`':
@@ -639,8 +644,6 @@ def structure(md: str, start: int, stop: int, stack) -> list:
                 nb = stack[-1][3] + 1 if stack[-1][3] else 1
                 stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
             stack.append(('indented', [], i, add_spaces))
-            if ii - i0 > 4:
-                ii = i0 + 4
             return ii
         elif seq  == '#' and md[i] in ' \t\n' and w < 4 and w2 <= 6:
             stack.append((f'h{w2}', [], i, None))
@@ -907,9 +910,13 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     prev_i = -2
     bypass = []
 
-    if stack[-1][0] in ['fenced', 'p', 'p_', 'indented', 'em', 'strong'] and stack[-1][1] and offset == 0:
+    if stack[-1][0] in ['p', 'p_', 'indented', 'em', 'strong'] and offset == 0 and stack[-1][1]:
         stack[-1][1].append('\n')
-    if stack[-1][0] in ['code'] and stack[-1][1] and offset == 0:
+    elif stack[-1][0] in ['fenced'] and offset == 0 and stack[-1][1]:
+        stack[-1][1].append('\n')
+    elif stack[-1][0] in ['fenced'] and offset == 0 and not stack[-1][1]:
+        stack[-1][1].append('')
+    elif stack[-1][0] in ['code'] and md[i] != '`' and stack[-1][1] and offset == 0:
         stack[-1][1].append(' ')
 
     if offset == 1:
@@ -1080,6 +1087,7 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     last_content = stack[-1][1]
 
     s = md[tok:stop].translate(HE_TR)
+
     if stack[-1][0] == 'indented' and stack[-1][3]:
         s = ' ' * stack[-1][3] + s
         stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], None)
@@ -1138,7 +1146,7 @@ def transform(md: str, start: int = 0) -> str:
                 phase = "in_payload"
                 continue
             else:
-                if stack[-1][0] in ['fenced', 'indented']:
+                if stack[-1][0] in ['indented', 'fenced']:
                     phase = "in_payload"
                 else:
                     phase = "in_structure" if i < eol else "fforward"
