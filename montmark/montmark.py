@@ -80,7 +80,7 @@ def extract_title(md: str, start: int, stop: int):
     return res, i
 
 
-def extract_destination(md: str, start: int, stop: int):
+def extract_destination_OLD(md: str, start: int, stop: int):
     """Search for link destination in link_definition."""
     res = ''
     i = start
@@ -108,50 +108,70 @@ def extract_destination(md: str, start: int, stop: int):
     return res, i+1
 
 
-def check_link_id(md: str, start = 0):
-    """Dedicated detection of out-of-band link definition."""
-    url = ''
-    title = ''
+def extract_destination(md: str, start: int, stop: int):
+    """Search for link destination in link_definition."""
+    res = -1
     i = start
-    if i >= len(md):
-        return False, False, False, -1
-    if md[i] not in ' [':
-        return False, False, False, -1
-    c = md.find('[', i, i+4)
-    if c == -1 or md[i:c] != ' ' * (c - i):
-        return False, False, False, -1
-    i = c + 1
-    c = md.find('\n', i)
-    eol = c if c != -1 else len(md)
-    c = md.find(']', i, eol)
-    if c == -1:
-        return False, False, False, -1
-    link_id = md[i:c]
-    i = c + 1
-    if md[i] != ':':
-        return False, False, False, -1
-    i += 1
+    first_char = ''
+    nl = False
+    while i < stop:
+        if not first_char:
+            if md[i] not in ' \t\n':
+                first_char = md[i]
+                res = i
+            elif md[i] == '\n' and nl:
+                    return '', i+1
+        elif first_char == '<':
+            if md[i] == '>':
+                return md[res:i+1], i+1
+        else:
+            if md[i] in ' \n':
+                return md[res:i], i
+        nl = True if md[i] == '\n' else False
+        i += 1
+    return md[res:i], i
 
-    url, i = extract_destination(md, i, len(md))
-    if not url or md[i] not in ' \t\n':
-        return False, False, False, -1
-    if url[0] == '<' and url[-1] == '>':
-        url = url[1:-1]
-    c = md.find('\n', i)
-    eol = c if c != -1 else len(md)
 
-    ret = extract_title(md, i, len(md))
-    if ret is None:
-        return False, False, False, -1
-    title, i2 = ret
-    if title:
-        c = md.find('\n', i2)
-        eol = c if c != -1 else len(md)
-        i = i2
-    f = indentation(md, i+1, eol)[1]
-    if f < eol:
-        return False, False, False, -1
-    return (link_id, html.unescape(url), html.unescape(title), eol)
+def check_link_id(md, start, eol = -1, search = "SQUARE"):
+    """Dedicated parsing of links."""
+    i = i0 = start
+    res = {}
+    link_id = url = title = False
+    url_b = url_e = 0
+    id_b = id_e = 0
+    title_b = 0
+    brackets = title_m = ''
+    eol = md.find('\n', i) if eol == -1 else eol
+    eol = eol if eol != -1 else len(md)
+    if search == "SQUARE":
+        if md[i] not in ' [':
+            return False, False, False, -1
+        id_b = md.find('[', i, i+4)
+        if id_b == -1 or md[i:id_b] != ' ' * (id_b - i):
+            return False, False, False, -1
+        id_e = md.find(']:', id_b, eol)
+        if id_e == -1:
+            return False, False, False, -1
+        link_id = md[id_b+1:id_e]
+        i = id_e+2
+        search = "URL"
+    if search == "URL":
+        url, i = extract_destination(md, i, eol)
+        if not url or (i < len(md) and md[i] not in ' \t\n'):
+            return link_id, False, False, eol
+        if url[0] == '<' and url[-1] == '>':
+            url = html.unescape(url[1:-1])
+        search = "TITLE"
+    if search == "TITLE":
+        ret = extract_title(md, i, eol)
+        if ret is None:
+            return link_id, url, False, eol
+        title, i = ret
+        if title:
+            f = indentation(md, i+1, eol)[1]
+            #if f < eol:
+            #    return link_id, url, False, eol
+    return (link_id, url, html.unescape(title), eol)
 
 
 def check_setext(md: str, start = 0):
@@ -344,7 +364,7 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content, params, last):
     """Prepare html segments but keep them in a list for future join."""
-    if element == 'span' or element == 'p_':
+    if element == 'span' or element == 'p_' or element == 'link_id':
         element = ''
     elif element in ['fenced', 'indented']:
         if element == 'indented':
@@ -418,13 +438,14 @@ def forward_cursor(md, start, offset):
     return i
 
 
-def context(md: str, start: int, stop: int, stack, close = False) -> int:
+def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
     p_ending = False
+
     if len(stack) == 1:
         return i
 
@@ -452,7 +473,23 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         tok2, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
-        if node in ['em', 'strong', 'code']:
+        if node in ['link_id']:
+            link_id, url, title = params
+            if not url:
+                _, url, title, eoli = check_link_id(md, i, search="URL")
+                if url:
+                    params[1] = url
+                    params[2] = title
+                    return eoli
+            elif not title:
+                _, _, title, eoli = check_link_id(md, i, search="TITLE")
+                if title:
+                    params[2] = title
+                    i = eoli
+                broken = True
+            else:
+                broken = True
+        elif node in ['em', 'strong', 'code']:
             return i0
         elif node in ['p', 'p_']:
             if hr or (seq == '#' and w < 4) or (seq == '`' and w2 >= 3):
@@ -587,6 +624,10 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
         node_cursor = 1
     nb_exited = len(stack) - node_cursor
     for _ in range(nb_exited):
+        if stack[-1][0] == 'link_id':
+            link_id, url, title = stack[-1][3]
+            if link_id and url:
+                links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*"), title.replace('\\', ''))
         if stack[-1][0] == 'p_' and p_ending:
             stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
         if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
@@ -611,7 +652,7 @@ def context(md: str, start: int, stop: int, stack, close = False) -> int:
     return i
 
 
-def structure(md: str, start: int, stop: int, stack) -> list:
+def structure(md: str, start: int, stop: int, stack, links) -> list:
     """Build new blocks.
 
     ...
@@ -626,8 +667,9 @@ def structure(md: str, start: int, stop: int, stack) -> list:
     if hr:
         stack.append(('hr', [], i, None))
         return eol
-    if stack[-1][0] == 'html':
+    if stack[-1][0] in ['html', 'link_id']:
         return i
+
     while i < len(md):
         node, accu, _, _ = stack[-1]
         i0 = i
@@ -636,6 +678,11 @@ def structure(md: str, start: int, stop: int, stack) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
+        if i <= stop and stack[-1][0] != 'p':
+            link_id, url, title, eoli = check_link_id(md, i)
+            if link_id:
+                stack.append(('link_id', [], i, [link_id, url, title]))
+                return stop
         if seq in '`~' and w < 4 and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
                 nb = stack[-1][3] + 1 if stack[-1][3] else 1
@@ -733,10 +780,8 @@ def open_element(md, tok, i, stack, offset, element, params, init = None):
 def close_element(md, tok, i, stack, offset):
     """Flush segment and close current element."""
     b, e = tok, i
-    dprint('DDDDD', b, e, offset)
     if stack[-1][0] == 'code' and i-tok>2 and md[tok] == ' ' and md[i-offset] == ' ':
         b, e = tok+1, i-1
-    dprint('DDDDD', b, e, offset)
     stack[-1][1].append(md[b:e-offset+1])
     prev = stack.pop()
     current = stack[-1][1]
@@ -808,7 +853,8 @@ def detect_link(md, start, stop):
                     search = "LINK"
                 else:
                     res['square'] = content
-                    res['link_id'] = content
+                    #res['link_id'] = content
+                    res['link_id'] = md[start:i-1]
                     return res, i
         elif search == "LINK":
             if md[i] == ']':
@@ -831,6 +877,7 @@ def detect_link(md, start, stop):
                 if '\n' in url:
                     return None, start
                 url = quote(url.replace('\\', ''), safe=":/?=&*")
+                #url = url.replace('\\', '')
                 res['url'] = url
                 i += 1
                 search = "TITLE"
@@ -844,6 +891,7 @@ def detect_link(md, start, stop):
                     elif '\n' in url:
                         return None, start
                     url = quote(html.unescape(url), safe=":/?=&*")
+                    #url = html.unescape(url)
                     res['url'] = url
                     i -= 1
                     search = "TITLE"
@@ -1124,14 +1172,16 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     if s:
         last_content.append(s)
 
-    if last_elt[0]  == 'p' and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
+    if last_elt in ['p', 'p_', 'em'] and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
         stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
-    if last_elt[0]  == 'p' and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
+    elif last_elt in ['p', 'p_', 'em'] and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
         last_content[-1] = last_content[-1].rstrip('\\')
         stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
+    elif last_elt in ['p', 'p_'] and len(last_content[-1]) > 1 and last_content[-1][-1] == ' ':
+        last_content[-1] = last_content[-1].rstrip(' ')
     return stop+1
 
 
@@ -1158,7 +1208,7 @@ def transform(md: str, start: int = 0) -> str:
         if phase == "in_context":
             dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
             before = i
-            i = context(md, i, eol, stack)
+            i = context(md, i, eol, stack, links)
             dprint(f'        | after context i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
@@ -1174,13 +1224,7 @@ def transform(md: str, start: int = 0) -> str:
 
         if phase == "in_structure":
             dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25}')
-            if stack[-1][0] != 'p':
-                link_id, url, title, eoli = check_link_id(md, i)
-                if link_id:
-                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*"), title.replace('\\', ''))
-                    i = eoli
-                    continue
-            i = structure(md, i, eol, stack)
+            i = structure(md, i, eol, stack, links)
             dprint(f'        | after structure i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
@@ -1196,9 +1240,9 @@ def transform(md: str, start: int = 0) -> str:
         phase = "in_context"
 
         if i >= len(md):
-            dprint(f'{i:2} | ef | {".".join([x[0] for x in stack[0:]]):25} ')
+            dprint(f'{i:2} | ef | eol={eol} {".".join([x[0] for x in stack[0:]]):25} ')
             before = i
-            i = context('\n', i, eol, stack, close=True)
+            i = context('\n', i, eol, stack, links, close=True)
             if i < before:
                 dprint(f'        | ROLLBACK i={i} before={before}')
                 skip = 1
