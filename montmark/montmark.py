@@ -54,123 +54,96 @@ spans = '|'.join(escaped)
 regex = re.compile(spans)
 
 
-
-def extract_title(md: str, start: int, stop: int):
-    """Search for title in link definition."""
-    res = ''
+def extract_square(md: str, start: int, stop: int):
+    """Extract content between brackets."""
+    square_b = -1
     i = start
-    first_char = ''
-    nl = False
     while i < stop:
-        if not first_char:
-            if md[i] in MATCHING:
-                first_char = md[i]
-                res = first_char
-            elif md[i] == '\n' and nl:
-                return '', i
-        else:
-            if md[i] == '\n' and nl:
-                return None
-            elif md[i] == MATCHING[first_char]:
-                return (res[1:], i)
-            else:
-                res += md[i]
-        nl = True if md[i] == '\n' else False
+        if square_b < 0:
+            if md[i] not in ' ':
+                if md[i] == '[':
+                    square_b = i
+                else:
+                    break
+        elif square_b >= 0:
+            if md[i] == ']' and md[i-1] != '\\':
+                return md[square_b+1:i], i+1
         i += 1
-    return res, i
-
-
-def extract_destination_OLD(md: str, start: int, stop: int):
-    """Search for link destination in link_definition."""
-    res = ''
-    i = start
-    first_char = ''
-    nl = False
-    while i < stop:
-        if not first_char:
-            if md[i] not in ' \t\n':
-                first_char = md[i]
-                res = first_char
-            elif md[i] == '\n' and nl:
-                    return '', i+1
-        elif first_char == '<':
-            if md[i] == '>':
-                return (res + '>', i+1)
-            else:
-                res += md[i]
-        else:
-            if md[i] in ' \n':
-                return (res, i)
-            else:
-                res += md[i]
-        nl = True if md[i] == '\n' else False
-        i += 1
-    return res, i+1
+    return '', i+1
 
 
 def extract_destination(md: str, start: int, stop: int):
     """Search for link destination in link_definition."""
-    res = -1
-    i = start
+    url_b = -1
     first_char = ''
-    nl = False
+    i = start
     while i < stop:
         if not first_char:
             if md[i] not in ' \t\n':
                 first_char = md[i]
-                res = i
-            elif md[i] == '\n' and nl:
-                    return '', i+1
+                url_b = i
         elif first_char == '<':
             if md[i] == '>':
-                return md[res:i+1], i+1
+                return html.unescape(md[url_b+1:i]), '<>', i+1
         else:
             if md[i] in ' \n':
-                return md[res:i], i
-        nl = True if md[i] == '\n' else False
+                return md[url_b:i], '', i
         i += 1
-    return md[res:i], i
+    if url_b:
+        return md[url_b:i], '', i
+    else:
+        return '', None, i
 
 
-def check_link_id(md, start, eol = -1, search = "SQUARE"):
+def extract_title(md: str, start: int, stop: int):
+    """Search for title in link definition."""
+    title_b = -1
+    first_char = ''
+    i = start
+    while i < stop:
+        if not first_char:
+            if md[i] in MATCHING:
+                first_char = md[i]
+                title_b = i
+        else:
+            if md[i] == MATCHING[first_char]:
+                return (md[title_b+1:i], i)
+        i += 1
+    return '', i
+
+
+def check_link_def(md, start, eol, search = "SQUARE"):
     """Dedicated parsing of links."""
     i = i0 = start
     res = {}
-    link_id = url = title = False
+    link_id = url = title = None
     url_b = url_e = 0
     id_b = id_e = 0
     title_b = 0
     brackets = title_m = ''
-    eol = md.find('\n', i) if eol == -1 else eol
-    eol = eol if eol != -1 else len(md)
     if search == "SQUARE":
         if md[i] not in ' [':
-            return False, False, False, -1
-        id_b = md.find('[', i, i+4)
-        if id_b == -1 or md[i:id_b] != ' ' * (id_b - i):
-            return False, False, False, -1
-        id_e = md.find(']:', id_b, eol)
-        if id_e == -1:
-            return False, False, False, -1
-        link_id = md[id_b+1:id_e]
-        i = id_e+2
+            return None, None, None, -1
+        square, i = extract_square(md, i, eol)
+        if square and md[i] == ':':
+            link_id = square
+            i += 1
+        else:
+            return None, None, None, -1
         search = "URL"
     if search == "URL":
-        url, i = extract_destination(md, i, eol)
-        if not url or (i < len(md) and md[i] not in ' \t\n'):
-            return link_id, False, False, eol
-        if url[0] == '<' and url[-1] == '>':
-            url = html.unescape(url[1:-1])
+        url, typ, i = extract_destination(md, i, eol)
+        if not typ and not url:
+            return link_id, None, None, eol
+        if md[i] not in " \t\n":
+            return None, None, None, eol
         search = "TITLE"
     if search == "TITLE":
-        ret = extract_title(md, i, eol)
-        if ret is None:
-            return link_id, url, False, eol
-        title, i = ret
+        title, i = extract_title(md, i, eol)
         if title:
             f = indentation(md, i+1, eol)[1]
-            #if f < eol:
-            #    return link_id, url, False, eol
+            if f < eol:
+                return None, None, None, eol
     return (link_id, url, html.unescape(title), eol)
 
 
@@ -475,14 +448,17 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
 
         if node in ['link_id']:
             link_id, url, title = params
-            if not url:
-                _, url, title, eoli = check_link_id(md, i, search="URL")
+            if url is None:
+                _, url, title, eoli = check_link_def(md, i, stop, search="URL")
                 if url:
                     params[1] = url
                     params[2] = title
                     return eoli
+                else:
+                    stack[-1] = ('p', [md[stack[-1][2]:i-1]], stack[-1][2], False)
+                    broken = True
             elif not title:
-                _, _, title, eoli = check_link_id(md, i, search="TITLE")
+                _, _, title, eoli = check_link_def(md, i, stop, search="TITLE")
                 if title:
                     params[2] = title
                     i = eoli
@@ -626,8 +602,8 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
     for _ in range(nb_exited):
         if stack[-1][0] == 'link_id':
             link_id, url, title = stack[-1][3]
-            if link_id and url:
-                links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*"), title.replace('\\', ''))
+            if link_id and url is not None and link_id.upper() not in links:
+                links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*()"), title.replace('\\', ''))
         if stack[-1][0] == 'p_' and p_ending:
             stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
         if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
@@ -639,7 +615,7 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
-        if element in ['em', 'strong', 'code']:
+        if element in ['em', 'strong', 'code', 'span']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
             offset = 0
             if element == 'code':
@@ -678,8 +654,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if i <= stop and stack[-1][0] != 'p':
-            link_id, url, title, eoli = check_link_id(md, i)
+        if i <= stop and w<4 and stack[-1][0] != 'p':
+            link_id, url, title, eoli = check_link_def(md, i, stop)
             if link_id:
                 stack.append(('link_id', [], i, [link_id, url, title]))
                 return stop
@@ -876,8 +852,7 @@ def detect_link(md, start, stop):
                 url = md[url_b+1:i]
                 if '\n' in url:
                     return None, start
-                url = quote(url.replace('\\', ''), safe=":/?=&*")
-                #url = url.replace('\\', '')
+                url = quote(url.replace('\\', ''), safe=":/?=&*()")
                 res['url'] = url
                 i += 1
                 search = "TITLE"
@@ -890,8 +865,7 @@ def detect_link(md, start, stop):
                         return None, start
                     elif '\n' in url:
                         return None, start
-                    url = quote(html.unescape(url), safe=":/?=&*")
-                    #url = html.unescape(url)
+                    url = quote(html.unescape(url), safe=":/?=&*()")
                     res['url'] = url
                     i -= 1
                     search = "TITLE"
