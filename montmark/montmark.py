@@ -418,7 +418,6 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
     p_ending = False
-
     if len(stack) == 1:
         return i
 
@@ -439,7 +438,7 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
         stack[-1] = (elt, content, cp, None)
         return eol
 
-    while i < len(md) and not close:
+    while i < stop + 1 and not close:
         node, _, _, params = stack[node_cursor]
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
@@ -646,7 +645,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
     if stack[-1][0] in ['html', 'link_id']:
         return i
 
-    while i < len(md):
+    while i < stop + 1:
         node, accu, _, _ = stack[-1]
         i0 = i
         extra = 2 if i0 > 0 and md[i0-1] == '\t' else 0
