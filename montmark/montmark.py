@@ -48,7 +48,7 @@ SP = ' \xa0\n'
 PUNCTUATION = '_-(){}[]"\'.,!?@#$€£'
 SEPS = SP + PUNCTUATION
 
-patterns = ['*', '_', '`', '[', '<', '>', '&', '\\', '"']
+patterns = ['*', '_', '`', '[', ']', '(', ')', '<', '>', '&', '\\', '"', "'"]
 escaped = [re.escape(pattern) for pattern in patterns]
 spans = '|'.join(escaped)
 regex = re.compile(spans)
@@ -620,6 +620,13 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
             if element == 'code':
                 offset = params
             return rb
+        elif element in ['square', 'square2', 'url', '<url>']:
+            stack.pop()
+            dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
+            offset = 0
+            if element == 'code':
+                offset = params
+            return rb
         else:
             current = stack[-1][1]
             last = current[-1] if current else ''
@@ -758,15 +765,43 @@ def close_element(md, tok, i, stack, offset):
     if stack[-1][0] == 'code' and i-tok>2 and md[tok] == ' ' and md[i-offset] == ' ':
         b, e = tok+1, i-1
     stack[-1][1].append(md[b:e-offset+1])
-    prev = stack.pop()
+    closed = stack.pop()
     current = stack[-1][1]
-    last = current[-1] if current else ''
-    current += html_text(prev[0], prev[1], prev[3], last)
-    tok = i + offset
+    prev = stack[-2][1]
+    if closed[0] == 'square':
+        current[0]['square'] = ''.join(closed[1])
+        current[0]['link_id'] = ''.join(closed[1])
+        current[0]['original'] = '[' + ''.join(closed[1]) + ']'
+        tok = i + offset
+    elif closed[0] == 'url':
+        url = ''.join(closed[1])
+        url = quote(html.unescape(url), safe=":/?=&*()")
+        prev[0]['url'] = url
+        if 'link_id' in prev[0]:
+            prev[0]['link_id']
+        tok = i + offset
+    elif closed[0] == '<url>':
+        url = ''.join(closed[1])
+        url = quote(url.replace('\\', ''), safe=":/?=&*()")
+        prev[0]['url'] = url
+        if 'link_id' in prev[0]:
+            prev[0]['link_id']
+        tok = i + offset
+    elif closed[0] == 'title':
+        prev[0]['title'] = ''.join(closed[1])
+        tok = i + offset
+    elif closed[0] == 'square2':
+        current[0]['link_id'] = ''.join(closed[1])
+        current[0]['original'] += '[' + ''.join(closed[1]) + ']'
+        tok = i + offset
+    else:
+        last = current[-1] if current else ''
+        current += html_text(closed[0], closed[1], closed[3], last)
+        tok = i + offset
     return tok
 
 
-def keep_element(md, tok, i, stack, offset):
+def keep_struct(md, tok, i, stack, offset):
     """."""
     #stack[-1][1].append(md[tok:i-offset+1]) TODO archive
     prev = stack.pop()
@@ -825,13 +860,12 @@ def detect_link(md, start, stop):
                 elif md[i] == '[':
                     res['square'] = content
                     link_b = i+1
-                    search = "LINK"
+                    search = "REF"
                 else:
                     res['square'] = content
-                    #res['link_id'] = content
                     res['link_id'] = md[start:i-1]
                     return res, i
-        elif search == "LINK":
+        elif search == "REF":
             if md[i] == ']':
                 if link_b != i:
                     res['link_id'] = md[link_b:i]
@@ -940,9 +974,6 @@ def is_underscore_del(md: str, pattern: str, i: int, side: str):
 
 def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
     """Process spans in the content."""
-    #BACKSLASH_ESCAPED =  '`*_{}[]()#+-.!'
-    #if md[start] == '\n':
-    #    return stop+1
     i = start
     idx = 0
     tok, seq, w = start, '', 0
@@ -1067,9 +1098,13 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
         elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span']:
+            if stack[-2][0] in ['a', 'img']:
+                stack.pop()
+                _, _, rb, _ = stack.pop()
+                tok = rb
             tok = open_element(md, tok, i, stack, 1, 'code', 1)
             stl = False
-        elif md[i:i+1] == '>' and stack[-1][0] == 'span':
+        elif md[i:i+1] == '>' and stack[-1][0] == 'span' and stack[-2][0] != 'square': #TODO remove last cond
             typ = check_span(md, tok, i)
             if typ == 'raw':
                 _, content, cp, params = stack[-1]
@@ -1098,12 +1133,49 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
                 idx = markers.index(cp)
                 bypass.append(idx)
                 continue
-        elif md[i:i+1] == '<'  and stack[-1][0] != 'code' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
+        elif md[i:i+1] == '<' and stack[-1][0] != 'code' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
             break
-        elif md[i:i+1] == '[' and not skip:
+        elif stl and md[i:i+1] in ['"', "'", ')'] and stack[-1][0] == 'title':
+            tok = close_element(md, tok, i, stack, 1)
+            tok = close_element(md, tok, i, stack, 1)
+            tok = close_element(md, tok, i, stack, 1)
+            tok += 1
+        elif stl and md[i:i+1] in ['"', "'", '('] and stack[-1][0] in ['url'] and not skip:
+            tok = close_element(md, tok, i-1, stack, 1)
+            tok = open_element(md, tok, i, stack, 1, 'title', None)
+        elif stl and md[i:i+1] in ['>'] and stack[-1][0] in ['<url>'] and not skip:
+            tok = close_element(md, tok, i, stack, 1)
+        elif stl and md[i:i+1] in ['"', "'", '('] and stack[-1][0] in ['link'] and not skip:
+            tok = open_element(md, tok, i, stack, 1, 'title', None)
+        elif stl and md[i:i+1] == ')' and stack[-1][0] in ['url', 'title']:
+            tok = close_element(md, tok, i, stack, 1)
+            tok = close_element(md, tok, i, stack, 1)
+        elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
+            tok = open_element(md, tok, i, stack, 1, 'link', None)
+            if md[i+1] == '<':
+                tok = open_element(md, tok, i+1, stack, 1, '<url>', 0)
+            else:
+                tok = open_element(md, tok, i, stack, 1, 'url', 0)
+        elif stl and md[i:i+1] == ']' and stack[-1][0] == 'square2':
+            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]-1)
+            if stack[-1][3] == 0:
+                tok = close_element(md, tok, i, stack, 1)
+                tok = keep_struct(md, tok, i-1, stack, 1)
+                tok += 1
+        elif stl and md[i:i+1] == ']' and stack[-1][0] == 'square':
+            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]-1)
+            if stack[-1][3] == 0:
+                tok = close_element(md, tok, i, stack, 1)
+                if md[i+1:i+2] not in '[(':
+                    tok = keep_struct(md, tok, i, stack, 1)
+        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2']:
+            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
+        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip:
+            tok = open_element(md, tok, i, stack, 1, 'square2', 0)
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] != 'square' and md.find(']', i, stop) != -1: #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
@@ -1111,14 +1183,10 @@ def payload(md: str, start: int, stop: int, stack, offset=0) -> list:
             else:
                 e = 'a'
                 o = 0
-            rr, i = detect_link(md, i+1, stop)
-            if rr is not None:
-                rr['original'] = md[i0+o:i]
-                tok = open_element(md, tok, i0+o, stack, 1, e, None, [rr])
-                tok = keep_element(md, tok, i-1, stack, 1)
-            else:
-                i = i0-1
-        elif md[i] in '<>&"' and stack[-1][0] not in ['span']:
+            struct_init = {}
+            tok = open_element(md, tok, i0+o, stack, 1, e, None, [struct_init])
+            tok = open_element(md, tok, i0, stack, 1, 'square', 1)
+        elif md[i] in '<>&"' and stack[-1][0] not in ['span', 'url']:
             tok = html_entity(md, tok, i, stack)
         else:
             skip = False
