@@ -318,7 +318,7 @@ def forward_cursor(md, start, offset):
     return i
 
 
-def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
+def context(md: str, start: int, stop: int, stack, links, exclusions, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -492,6 +492,7 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
     if close:
         node_cursor = 1
     nb_exited = len(stack) - node_cursor
+
     for _ in range(nb_exited):
         if stack[-1][0] == 'p_' and p_ending:
             stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
@@ -517,20 +518,19 @@ def context(md: str, start: int, stop: int, stack, links, close = False) -> int:
             if element == 'code':
                 offset = params
             return rb
-        elif element in ['url', '<url>']:
-            stack.pop()
-            element, fragments, rb, params = stack.pop()
-            dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
-            offset = 0
-            if element == 'code':
-                offset = params
-            return rb
+        elif element in ['title']:
+            stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
             title = fragments[0].get('title', '')
-            if link_id and url is not None and link_id.upper() not in links:
-                links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*()"), title.replace('\\', ''))
+            if link_id and url is not None:
+                if link_id.upper() not in links:
+                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*()"), title.replace('\\', ''))
+            else:
+                exclusions[rb] = 'link-def'
+                stack.append(('p', [], i, False))
+                return rb
         else:
             current = stack[-1][1]
             last = current[-1] if current else ''
@@ -805,6 +805,8 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
         stack[-1][1].append('')
     elif stack[-1][0] in ['code'] and md[i] != '`' and stack[-1][1] and offset == 0:
         stack[-1][1].append(' ')
+    elif stack[-1][0] in ['title'] and offset == 0:
+        stack[-1][1].append('\n')
 
     if offset == 1:
         i += 1
@@ -1107,6 +1109,7 @@ def transform(md: str, start: int = 0) -> str:
     i = start
     stack = [('root', [], i, None)] #node, accu, checkpoint, optional parameters
     links = {}
+    exclusions = {}
     phase = "in_context"
     skip = 0
 
@@ -1118,7 +1121,7 @@ def transform(md: str, start: int = 0) -> str:
         if phase == "in_context":
             dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
             before = i
-            i = context(md, i, eol, stack, links)
+            i = context(md, i, eol, stack, links, exclusions)
             dprint(f'        | after context i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
@@ -1128,8 +1131,6 @@ def transform(md: str, start: int = 0) -> str:
                 continue
             else:
                 if stack[-1][0] in ['indented', 'fenced']:
-                    phase = "in_payload"
-                elif len(stack)>=4 and stack[-2][0] == 'link-def':
                     phase = "in_payload"
                 else:
                     phase = "in_structure" if i < eol else "fforward"
@@ -1154,7 +1155,7 @@ def transform(md: str, start: int = 0) -> str:
         if i >= len(md):
             dprint(f'{i:2} | ef | eol={eol} {".".join([x[0] for x in stack[0:]]):25} ')
             before = i
-            i = context('\n', i, eol, stack, links, close=True)
+            i = context('\n', i, eol, stack, links, exclusions, close=True)
             if i < before:
                 dprint(f'        | ROLLBACK i={i} before={before}')
                 skip = 1
