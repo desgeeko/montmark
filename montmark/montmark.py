@@ -526,6 +526,7 @@ def context(md: str, start: int, stop: int, stack, links, exclusions, close = Fa
             title = fragments[0].get('title', '')
             if link_id and url is not None:
                 if link_id.upper() not in links:
+                    dprint(f'        | storing new link def id={link_id} url={url} title={title}')
                     links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*()"), title.replace('\\', ''))
             else:
                 exclusions[rb] = 'link-def'
@@ -705,8 +706,8 @@ def close_element(md, tok, i, stack, offset, links = {}):
         pass
     elif closed[0] == 'link-def':
         obj = closed[1][0]
+        dprint(f'        | storing new link def id={obj['link_id']} url={obj['url']} title={obj.get('title')}')
         links[obj['link_id'].upper()] = (obj['url'], obj.get('title', ''))
-        #stack.pop()
     else:
         last = current[-1] if current else ''
         current += html_text(closed[0], closed[1], closed[3], last)
@@ -840,7 +841,7 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
         _, ii, _, _ = indentation(md, i)
         tok = ii
         if md[ii] in ['"', "'", ')']:
-            tok = open_element(md, tok, ii, stack, 1, 'title', 0)
+            tok = open_element(md, tok, ii, stack, 1, 'title', md[ii])
             idx += 1
         else:
             tok = close_element(md, tok, stop, stack, 1)
@@ -905,7 +906,8 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
             rb = stack[-1][2]
             stack.pop()
             if rb in markers:
-                idx = markers.index(rb)
+                tok = rb
+                idx = markers.index(rb)+1
             else:
                 idx = 0 #TODO fix
             continue
@@ -992,19 +994,19 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
             stl = False
         elif stack[-1][0] == 'html':
             break
-        elif stl and md[i:i+1] in ['"', "'", ')'] and stack[-1][0] == 'title':
+        elif stl and stack[-1][0] == 'title' and md[i:i+1] == MATCHING.get(stack[-1][3]) :
             tok = close_element(md, tok, i, stack, 1)
             tok = close_element(md, tok, i, stack, 1)
             tok = close_element(md, tok, i, stack, 1, links)
             tok = stop
-        elif stl and md[i:i+1] in ['"', "'", '('] and stack[-1][0] in ['url'] and not skip:
+        elif stl and md[i:i+1] in ['"', "'", '('] and md[i-1:i] == ' ' and stack[-1][0] in ['url'] and not skip:
             tok = close_element(md, tok, i-1, stack, 1)
-            tok = open_element(md, tok, i, stack, 1, 'title', None)
+            tok = open_element(md, tok, i, stack, 1, 'title', md[i])
         elif stl and md[i:i+1] in ['>'] and stack[-1][0] in ['<url>'] and not skip:
             tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i:i+1] in ['"', "'", '('] and stack[-1][0] in ['link'] and not skip:
-            tok = open_element(md, tok, i, stack, 1, 'title', None)
-        elif stl and md[i:i+1] == ')' and stack[-1][0] in ['url', 'title']:
+            tok = open_element(md, tok, i, stack, 1, 'title', md[i])
+        elif stl and md[i:i+1] == ')' and stack[-1][0] in ['url'] and stack[-3][0] != 'link-def':
             tok = close_element(md, tok, i, stack, 1)
             tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
