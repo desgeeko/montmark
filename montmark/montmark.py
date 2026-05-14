@@ -264,6 +264,7 @@ def html_text(element: str, content, params, last):
         content.append('\n')
     elif element in ['a', 'img']:
         text = content[0]['square']
+        alt = content[0].get("alt")
         url = content[0].get("url")
         link_id = content[0].get("link_id")
         title = content[0].get("title", '').translate(HE_TR)
@@ -271,7 +272,7 @@ def html_text(element: str, content, params, last):
         if element == 'a':
             ht = f'<{element} href="{url}"{title_attr}>{text}</{element}>'
         else:
-            ht = f'<{element} src="{url}" alt="{text}"{title_attr} />'
+            ht = f'<{element} src="{url}" alt="{alt}"{title_attr} />'
         content = [ht]
     elif element in ['ol']:
         ol_start = '' if params[1] == 1 else f' start="{params[1]}"'
@@ -526,7 +527,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif element in ['title']:
             stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
         elif element in ['url']:
-            stack[-2][1][0]['url'] = fragments[0] 
+            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:/?=&*()")
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
@@ -676,10 +677,20 @@ def close_element(md, tok, i, stack, offset, links = {}):
     stack[-1][1].append(md[b:e-offset+1])
     closed = stack.pop()
     current = stack[-1][1]
-    if closed[0] == 'square':
-        current[0]['square'] = ''.join(closed[1])
-        current[0]['link_id'] = ''.join(closed[1])
-        current[0]['original'] = '[' + ''.join(closed[1]) + ']'
+    if closed[0] == 'square': #TODO fix
+        text = ''
+        raw = ''
+        for x in closed[1]:
+            if type(x) == str:
+                text += x
+                if len(x) > 0 and x[0] != '<':
+                    raw += x
+            else:
+                break
+        current[0]['square'] = text
+        current[0]['alt'] = raw
+        current[0]['link_id'] = text
+        current[0]['original'] = '[' + text + ']'
         tok = i + offset
     if closed[0] == 'link-id':
         current[0]['link_id'] = ''.join(closed[1])
@@ -687,7 +698,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
         tok = i + offset
     elif closed[0] == 'url':
         prev = stack[-2][1]
-        url = ''.join(closed[1])
+        url = ''.join(closed[1]).rstrip(' ')
         if ' ' in url:
             return -1
         url = quote(html.unescape(url.rstrip(' \t')), safe="%:/?=&*()")
@@ -710,8 +721,12 @@ def close_element(md, tok, i, stack, offset, links = {}):
         prev[0]['title'] = html.unescape(title)
         tok = i + offset
     elif closed[0] == 'square2':
-        current[0]['link_id'] = ''.join(closed[1])
-        current[0]['original'] += '[' + ''.join(closed[1]) + ']'
+        link_id = ''.join(closed[1])
+        if link_id:
+            current[0]['link_id'] = link_id
+            current[0]['original'] += '[' + link_id + ']'
+        else:
+            current[0]['link_id'] = current[0]['square']
         tok = i + offset
     elif closed[0] == 'link':
         pass
@@ -1066,7 +1081,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2']:
             stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip:
-            tok = open_element(md, tok, i, stack, 1, 'square2', 0)
+            tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) != 'a': #TODO refactor eol check
@@ -1074,6 +1089,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             if i > 0 and md[i-1] == '!':
                 e = 'img'
                 o = -1
+#                stl = False
             else:
                 e = 'a'
                 o = 0
