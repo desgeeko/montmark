@@ -318,7 +318,7 @@ def forward_cursor(md, start, offset):
     return i
 
 
-def context(md: str, start: int, stop: int, stack, links, exclusions, close = False) -> int:
+def context(md: str, start: int, stop: int, stack, links, wrong, close = False) -> int:
     """Adjust context by exiting blocks if necessary."""
     broken = False
     i = start
@@ -355,11 +355,16 @@ def context(md: str, start: int, stop: int, stack, links, exclusions, close = Fa
         if node in ['em', 'strong', 'code']:
             return i0
         elif node == 'link-def':
-            if md[ii] in '\r\n':
+            if md[ii] in '\r\n[>':
+                broken = True
+                i = i0
+            elif md[ii] not in ['"', "'", '('] and stack[-2][0] == 'link-def' and 'url' in stack[-2][1][0]:
                 broken = True
                 i = i0
             else:
                 return i0
+        elif node in ['a', 'img']:
+            return i0
         elif node in ['p', 'p_']:
             if hr or (seq == '#' and w < 4) or (seq == '`' and w2 >= 3):
                 broken = True
@@ -520,6 +525,8 @@ def context(md: str, start: int, stop: int, stack, links, exclusions, close = Fa
             return rb
         elif element in ['title']:
             stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
+        elif element in ['url']:
+            stack[-2][1][0]['url'] = fragments[0] 
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
@@ -527,9 +534,10 @@ def context(md: str, start: int, stop: int, stack, links, exclusions, close = Fa
             if link_id and url is not None:
                 if link_id.upper() not in links:
                     dprint(f'        | storing new link def id={link_id} url={url} title={title}')
-                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe=":/?=&*()"), title.replace('\\', ''))
+#                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title.replace('\\', ''))
+                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title)
             else:
-                exclusions[rb] = 'link-def'
+                wrong[rb] = 'link-def'
                 stack.append(('p', [], i, False))
                 return rb
         else:
@@ -562,7 +570,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
         _, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
-        if md[i:i+1] == '[' and md.find(']:', i, stop) != -1: #TODO refactor eol check
+        if md[i:i+1] == '[' and w < 4 and md.find(']:', i, stop) != -1 and stack[-1][0] != 'p': #TODO refactor eol check
             struct_init = {}
             stack.append(('link-def', [{}], i, None))
             return i
@@ -680,7 +688,9 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == 'url':
         prev = stack[-2][1]
         url = ''.join(closed[1])
-        url = quote(html.unescape(url.rstrip(' \t')), safe=":/?=&*()")
+        if ' ' in url:
+            return -1
+        url = quote(html.unescape(url.rstrip(' \t')), safe="%:/?=&*()")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -688,7 +698,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == '<url>':
         prev = stack[-2][1]
         url = ''.join(closed[1])
-        url = quote(url.replace('\\', ''), safe=":/?=&*()")
+        url = quote(url.replace('\\', ''), safe="%:/?=&*()")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -696,7 +706,8 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == 'title':
         prev = stack[-2][1]
         title = ''.join(closed[1])
-        prev[0]['title'] = html.unescape(title.replace('\\', ''))
+#        prev[0]['title'] = html.unescape(title.replace('\\', ''))
+        prev[0]['title'] = html.unescape(title)
         tok = i + offset
     elif closed[0] == 'square2':
         current[0]['link_id'] = ''.join(closed[1])
@@ -706,8 +717,8 @@ def close_element(md, tok, i, stack, offset, links = {}):
         pass
     elif closed[0] == 'link-def':
         obj = closed[1][0]
-        dprint(f'        | storing new link def id={obj['link_id']} url={obj['url']} title={obj.get('title')}')
-        links[obj['link_id'].upper()] = (obj['url'], obj.get('title', ''))
+        dprint(f'        | storing new link def id={obj['link_id']} url={obj.get('url')} title={obj.get('title')}')
+        links[obj['link_id'].upper()] = (obj.get('url'), obj.get('title', ''))
     else:
         last = current[-1] if current else ''
         current += html_text(closed[0], closed[1], closed[3], last)
@@ -787,7 +798,7 @@ def is_underscore_del(md: str, pattern: str, i: int, side: str):
     return False
 
 
-def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
+def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> list:
     """Process spans in the content."""
     i = start
     idx = 0
@@ -840,12 +851,17 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
     elif stack[-1][0] == 'link' and stack[-2][1][0].get('url'):
         _, ii, _, _ = indentation(md, i)
         tok = ii
-        if md[ii] in ['"', "'", ')']:
+        if md[ii] in ['"', "'", '(']:
             tok = open_element(md, tok, ii, stack, 1, 'title', md[ii])
             idx += 1
         else:
-            tok = close_element(md, tok, stop, stack, 1)
-            tok = close_element(md, tok, stop, stack, 1, links)
+#            tok = close_element(md, tok, stop, stack, 1)
+#            tok = close_element(md, tok, stop, stack, 1, links)
+            stack.pop()
+            _, _, rb, _ = stack.pop()
+            wrong[rb] = 'a'
+            tok = rb
+            return rb
     elif stack[-1][0] == 'title':
         _, ii, _, _ = indentation(md, i)
         tok = ii
@@ -971,7 +987,7 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
             elif typ == 'autolink':
                 txt = md[tok+1:i]
                 descr = txt.translate(HE_TR)
-                url = quote(txt.translate(HE_TR), safe=":/?=&*")
+                url = quote(txt.translate(HE_TR), safe="%:/?=&*")
                 stack[-1] = ('a', [{'square': descr, 'url': url}], None, '')
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
@@ -1008,7 +1024,15 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
             tok = open_element(md, tok, i, stack, 1, 'title', md[i])
         elif stl and md[i:i+1] == ')' and stack[-1][0] in ['url'] and stack[-3][0] != 'link-def':
             tok = close_element(md, tok, i, stack, 1)
-            tok = close_element(md, tok, i, stack, 1)
+            if tok == -1:
+                stack.pop()
+                _, _, rb, _ = stack.pop()
+                wrong[rb] = 'a'
+                tok = rb
+                idx = markers.index(rb)
+                continue
+            else:
+                tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
             tok = open_element(md, tok, i, stack, 1, 'link', None)
             if md[i+1] == '<':
@@ -1045,7 +1069,7 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
             tok = open_element(md, tok, i, stack, 1, 'square2', 0)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1: #TODO refactor eol check
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) != 'a': #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
@@ -1066,8 +1090,15 @@ def payload(md: str, start: int, stop: int, stack, links, offset=0) -> list:
     last_elt = stack[-1][0]
     last_content = stack[-1][1]
 
-    if stack[-1][0] in ['url', '<url>']:
+    if stack[-1][0] in ['url']:
         tok = close_element(md, tok, stop, stack, 1)
+    elif stack[-1][0] in ['<url>']:
+        stack.pop()
+        stack.pop()
+        _, _, rb, _ = stack.pop()
+        wrong[rb] = 'a'
+        tok = rb
+        return rb
 
     s = md[tok:stop].translate(HE_TR)
 
@@ -1111,7 +1142,7 @@ def transform(md: str, start: int = 0) -> str:
     i = start
     stack = [('root', [], i, None)] #node, accu, checkpoint, optional parameters
     links = {}
-    exclusions = {}
+    wrong = {}
     phase = "in_context"
     skip = 0
 
@@ -1119,11 +1150,12 @@ def transform(md: str, start: int = 0) -> str:
         eol = md.find("\n", i)
         eol = len(md) if eol == -1 else eol
         dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])} {phase}')
+        before = i
         
         if phase == "in_context":
             dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
-            before = i
-            i = context(md, i, eol, stack, links, exclusions)
+#            before = i
+            i = context(md, i, eol, stack, links, wrong)
             dprint(f'        | after context i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
@@ -1146,9 +1178,13 @@ def transform(md: str, start: int = 0) -> str:
         if phase == "in_payload":
             dprint(f'{i:2} | _p | {" ":25}')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
-            payload(md, i, r, stack, links, skip)
+            x = payload(md, i, r, stack, links, wrong, skip)
             skip = 0
             dprint(f'        | after payload => {r:2} {stack[-1]}')
+            if x <= before:
+                i = x
+                skip = 1
+                continue
             phase = "in_context"
 
         i = eol+1
@@ -1157,7 +1193,7 @@ def transform(md: str, start: int = 0) -> str:
         if i >= len(md):
             dprint(f'{i:2} | ef | eol={eol} {".".join([x[0] for x in stack[0:]]):25} ')
             before = i
-            i = context('\n', i, eol, stack, links, exclusions, close=True)
+            i = context('\n', i, eol, stack, links, wrong, close=True)
             if i < before:
                 dprint(f'        | ROLLBACK i={i} before={before}')
                 skip = 1
