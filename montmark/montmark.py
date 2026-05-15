@@ -121,9 +121,9 @@ def check_hr(md: str, start = 0):
 
 def check_tag(md:str, start, stop):
     """."""
-    i = start+1
+    i = start
     zone = 'in_main'
-    while i < stop-1:
+    while i < stop:
         if zone == 'in_main':
             if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' :-.=/'):
                 return False
@@ -196,7 +196,7 @@ def check_html_block(md: str, start, stop):
     elif cond_6:
         condition = 6
     elif cond_7:
-        if check_tag(md, i, stop):
+        if check_tag(md, i+1, stop-1):
             condition = 7
         else:
             return None
@@ -353,7 +353,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         tok2, i, seq, w2 = prefix(md, ii)
         dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
-        if node in ['em', 'strong', 'code']:
+        if node in ['em', 'strong', 'code', 'span']:
             return i0
         elif node == 'link-def':
             if md[ii] in '\r\n[>':
@@ -511,18 +511,11 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
-        if element in ['em', 'strong', 'code', 'span']:
+        if element in ['em', 'strong', 'code', 'span', 'square', 'square2']:
             dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
-            offset = 0
-            if element == 'code':
-                offset = params
-            return rb
-        elif element in ['square', 'square2']:
-            stack.pop()
-            dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
-            offset = 0
-            if element == 'code':
-                offset = params
+            if element in ['square', 'square2']:
+                stack.pop()
+            wrong[rb] = element
             return rb
         elif element in ['title']:
             stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
@@ -761,7 +754,12 @@ def basic_entity_substitution(c):
 
 def html_entity(md, tok, i, stack):
     """Turn special chars into HTML entities."""
-    stack[-1][1].append(md[tok:i])
+    if md[tok] == '<':
+#       stack[-1][1].append(basic_entity_substitution(md[tok]))
+#       stack[-1][1].append(md[tok+1:i])
+        stack[-1][1].append(md[tok:i])
+    else:
+        stack[-1][1].append(md[tok:i])
     stack[-1][1].append(basic_entity_substitution(md[i]))
     tok = i + 1
     return tok
@@ -822,9 +820,8 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     skip = False
     found_bs = False
     prev_i = -2
-    bypass = []
 
-    if stack[-1][0] in ['p', 'p_', 'indented', 'em', 'strong'] and offset == 0 and stack[-1][1]:
+    if stack[-1][0] in ['p', 'p_', 'indented', 'em', 'strong', 'span'] and offset == 0 and stack[-1][1]:
         stack[-1][1].append('\n')
     elif stack[-1][0] in ['fenced'] and offset == 0 and stack[-1][1]:
         stack[-1][1].append('\n')
@@ -835,9 +832,9 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     elif stack[-1][0] in ['title'] and offset == 0:
         stack[-1][1].append('\n')
 
-    if offset == 1:
-        i += 1
-        start += 1
+#    if offset == 1:
+#        i += 1
+#        start += 1
 
     if stack[-1][0] == 'html':
         stack[-1][1].append('\n')
@@ -956,16 +953,16 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i] in ['_'] and md[i-1] != '_' and stack[-1][0] in ('em') and is_underscore_del(md, md[i], i, 'RIGHT'):
             tok = close_element(md, tok, i, stack, 1)
-        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP:
+        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP and wrong.get(i-2) not in ['strong', 'em']:
             tok = open_element(md, tok, i, stack, 3, 'em', None)
             tok = open_element(md, tok, i, stack, 3, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['**'] and is_flank(md, '**', i, 'LEFT'):
+        elif stl and i > start and md[i-1:i+1] in ['**'] and is_flank(md, '**', i, 'LEFT') and wrong.get(i-1) != 'strong':
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['__'] and is_underscore_del(md, '__', i, 'LEFT'):
+        elif stl and i > start and md[i-1:i+1] in ['__'] and is_underscore_del(md, '__', i, 'LEFT') and wrong.get(i-1) != 'strong':
             tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and md[i] == '*'  and is_flank(md, md[i], i, 'LEFT'):
+        elif stl and md[i] == '*'  and is_flank(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
             tok = open_element(md, tok, i, stack, 1, 'em', None)
-        elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT'):
+        elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
             tok = open_element(md, tok, i, stack, 1, 'em', None)
         elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
             stl = True
@@ -978,13 +975,13 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif md[i:i+1] == '`' and md[i-1] != md[i] and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers:
+        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers and wrong.get(i-2) != 'code':
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
-        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers:
+        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers and wrong.get(i-1) != 'code':
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span']:
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span'] and wrong.get(i) != 'code':
             if stack[-2][0] in ['a', 'img']:
                 stack.pop()
                 _, _, rb, _ = stack.pop()
@@ -1017,10 +1014,9 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             else:
                 _, _, cp, _ = stack.pop()
                 dprint(f'        | span should be rolled back to cp={cp}', stack)
-                idx = markers.index(cp)
-                bypass.append(idx)
-                continue
-        elif md[i:i+1] == '<' and stack[-1][0] != 'code' and idx not in bypass and (md[i+1].isalpha() or md[i+1] == '/'):
+                wrong[cp] = 'span'
+                return cp
+        elif md[i:i+1] == '<' and stack[-1][0] != 'code' and (md[i+1].isalpha() or md[i+1] == '/') and wrong.get(i) != 'span':
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
@@ -1080,16 +1076,15 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                     tok = open_element(md, tok, ii-1, stack, 1, 'url', 0)
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2']:
             stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
-        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip:
+        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip and wrong.get(i) != 'square2':
             tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) != 'a': #TODO refactor eol check
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
                 o = -1
-#                stl = False
             else:
                 e = 'a'
                 o = 0
@@ -1116,7 +1111,9 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         tok = rb
         return rb
 
-    s = md[tok:stop].translate(HE_TR)
+    s = md[tok:stop]
+    if stack[-1][0] not in ['span']:
+        s = s.translate(HE_TR)
 
     if stack[-1][0] == 'indented' and stack[-1][3]:
         s = ' ' * stack[-1][3] + s
@@ -1197,7 +1194,8 @@ def transform(md: str, start: int = 0) -> str:
             x = payload(md, i, r, stack, links, wrong, skip)
             skip = 0
             dprint(f'        | after payload => {r:2} {stack[-1]}')
-            if x <= before:
+#            if x <= before:
+            if x < r:
                 i = x
                 skip = 1
                 continue
