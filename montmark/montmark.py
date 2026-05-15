@@ -119,13 +119,23 @@ def check_hr(md: str, start = 0):
     return res, eol
 
 
-def check_tag(md:str, start, stop):
-    """."""
+def check_tag(md: str, start: int, stop: int):
+    """Assert if html tag syntax is correct."""
     i = start
-    zone = 'in_main'
+    if md[i] == "?" and md[stop-1] == "?":
+        return True
+    if md[i] == "!":
+        return True
+    closing = True if md[i] == '/' else False
+    zone = 'in_tag_name'
     while i < stop:
-        if zone == 'in_main':
-            if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' :-.=/'):
+        if zone == 'in_tag_name':
+            if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' \n:-.=/'):
+                return False
+            if md[i] in ' \n':
+                zone = 'in_void'
+        elif zone == 'in_attr_name':
+            if closing:
                 return False
             if md[i] == '=':
                 i += 1
@@ -136,12 +146,21 @@ def check_tag(md:str, start, stop):
                 else:
                     return False
         elif zone == 'in_single':
-            if md[i] == '"':
+            if md[i] == "'":
+                zone = 'in_void'
+            elif md[i] == '"':
                 return False
         elif zone == 'in_double':
-            if md[i] == "'":
+            if md[i] == '"':
+                zone = 'in_void'
+            elif md[i] == "'":
                 return False
+        elif zone == 'in_void':
+            if md[i].isalpha():
+                zone = 'in_attr_name'
         i += 1
+    if zone == 'in_void' and md[i-2] == '/':
+        return False
     return True
 
 
@@ -735,7 +754,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
 
 
 def keep_struct(md, tok, i, stack, offset):
-    """."""
+    """Keep struct in stack instead of closing it into its predecessor."""
     #stack[-1][1].append(md[tok:i-offset+1]) TODO archive
     prev = stack.pop()
     current = stack[-1][1]
@@ -755,8 +774,6 @@ def basic_entity_substitution(c):
 def html_entity(md, tok, i, stack):
     """Turn special chars into HTML entities."""
     if md[tok] == '<':
-#       stack[-1][1].append(basic_entity_substitution(md[tok]))
-#       stack[-1][1].append(md[tok+1:i])
         stack[-1][1].append(md[tok:i])
     else:
         stack[-1][1].append(md[tok:i])
@@ -783,7 +800,7 @@ def check_span(md: str, tok: int, i: int):
 
 
 def is_flank(md: str, pattern: str, i: int, side: str):
-    """."""
+    """Assert if delimiter is left or right flanking."""
     inner = i+1 if side == 'LEFT' else i-1-len(pattern)+1
     outer = i-1-len(pattern)+1 if side == 'LEFT' else i+1
     if (
@@ -797,7 +814,7 @@ def is_flank(md: str, pattern: str, i: int, side: str):
 
 
 def is_underscore_del(md: str, pattern: str, i: int, side: str):
-    """."""
+    """Assert if underscore delimiter is left or right flanking."""
     opp_side = 'RIGHT' if side == 'LEFT' else 'LEFT'
     inner = is_flank(md, pattern, i, side)
     outer = is_flank(md, pattern, i, opp_side)
@@ -832,10 +849,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     elif stack[-1][0] in ['title'] and offset == 0:
         stack[-1][1].append('\n')
 
-#    if offset == 1:
-#        i += 1
-#        start += 1
-
     if stack[-1][0] == 'html':
         stack[-1][1].append('\n')
         stack[-1][1].append(md[start:stop])
@@ -859,7 +872,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         else:
             rb = stack[-2][2]
             stack.pop()
-            #idx = markers.index(rb)
     elif stack[-1][0] == 'link' and stack[-2][1][0].get('url'):
         _, ii, _, _ = indentation(md, i)
         tok = ii
@@ -867,8 +879,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = open_element(md, tok, ii, stack, 1, 'title', md[ii])
             idx += 1
         else:
-#            tok = close_element(md, tok, stop, stack, 1)
-#            tok = close_element(md, tok, stop, stack, 1, links)
             stack.pop()
             _, _, rb, _ = stack.pop()
             wrong[rb] = 'a'
@@ -989,7 +999,11 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = open_element(md, tok, i, stack, 1, 'code', 1)
             stl = False
         elif md[i:i+1] == '>' and stack[-1][0] == 'span' and stack[-2][0] != 'square': #TODO remove last cond
-            typ = check_span(md, tok, i)
+            if stack[-1][1]:
+                t = ''.join(stack[-1][1]) + md[tok:i]
+                typ = check_span(t, 0, len(t))
+            else:
+                typ = check_span(md, tok, i)
             if typ == 'raw':
                 _, content, cp, params = stack[-1]
                 stack[-1] = (typ, content, cp, params)
@@ -1016,7 +1030,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 dprint(f'        | span should be rolled back to cp={cp}', stack)
                 wrong[cp] = 'span'
                 return cp
-        elif md[i:i+1] == '<' and stack[-1][0] != 'code' and (md[i+1].isalpha() or md[i+1] == '/') and wrong.get(i) != 'span':
+        elif md[i:i+1] == '<' and stack[-1][0] not in ['code','span'] and (md[i+1].isalpha() or md[i+1] in '/?!') and wrong.get(i) != 'span':
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
@@ -1244,6 +1258,7 @@ def transform(md: str, start: int = 0) -> str:
 
 
 def main():
+    """CLI entry point."""
     import argparse
     import sys
     parser = argparse.ArgumentParser(description="Transform Markdown into HTML")
