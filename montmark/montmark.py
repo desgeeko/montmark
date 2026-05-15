@@ -54,6 +54,17 @@ spans = '|'.join(escaped)
 regex = re.compile(spans)
 
 
+def dprint(*args, **kwargs):
+    """Custom print for debug."""
+    if not DEBUG:
+        return
+    idx = ['', '']
+    for i in range(1, min(3, len(args))):
+        idx[i-1] = args[i]
+    sep = '|' if idx[0] else ' '
+    print(f" {idx[0]:2} {sep} {idx[1]:2} | {args[0]}")
+
+
 def check_setext(md: str, start = 0):
     """Dedicated detection of setext headers."""
     tok = ''
@@ -369,7 +380,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         i0 = i
         tok, ii, sp_or_tabs, w = indentation(md, i0)
         tok2, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
+        if DEBUG:
+            dprint(f'{node} sptabs={sp_or_tabs} w={w} seq=@{seq}@ i0={i0} ii={ii} i={i}')
 
         if node in ['em', 'strong', 'code', 'span']:
             return i0
@@ -412,7 +424,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = i0 - 1
         elif node == 'li':
             offset, _, _ = stack[node_cursor-1][3]
-            dprint(f'        | li with offset {offset}', node_cursor)
+            if DEBUG:
+                dprint(f'li with offset {offset}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 _, _, _, w = indentation(md, start)
                 #if i-start < offset:
@@ -425,7 +438,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
                 i = forward_cursor(md, i0, offset)
-                dprint(f'        | forward to {i}')
+                if DEBUG:
+                    dprint(f'forward to {i}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
@@ -534,7 +548,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
         if element in ['em', 'strong', 'code', 'span', 'square', 'square2']:
-            dprint(f'        | {element} should be rolled back to rb={rb} params={params}')
+            if DEBUG:
+                dprint(f'{element} should be rolled back to rb={rb} params={params}')
             if element in ['square', 'square2']:
                 stack.pop()
             wrong[rb] = element
@@ -549,7 +564,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             title = fragments[0].get('title', '')
             if link_id and url is not None:
                 if link_id.upper() not in links:
-                    dprint(f'        | storing new link def id={link_id} url={url} title={title}')
+                    if DEBUG:
+                        dprint(f'storing new link def id={link_id} url={url} title={title}')
 #                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title.replace('\\', ''))
                     links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()"), title)
             else:
@@ -584,7 +600,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
         extra = 2 if i0 > 0 and md[i0-1] == '\t' else 0
         _, ii, sp_or_tabs, w = indentation(md, i0, extra)
         _, i, seq, w2 = prefix(md, ii)
-        dprint(f'        | {node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
+        if DEBUG:
+            dprint(f'{node} i0={i0} sptabs={sp_or_tabs} w={w} w2={w2} ii={ii} seq=@{seq}@  i={i}')
 
         if md[i:i+1] == '[' and w < 4 and md.find(']:', i, stop) != -1 and stack[-1][0] != 'p': #TODO refactor eol check
             struct_init = {}
@@ -648,7 +665,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             stack.append(('li', [], i, 0))
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
-            dprint('        | html block', typ)
+            if DEBUG:
+                dprint('html block', typ)
             condition, ends = typ
             if ends:
                 current = stack[-1][1]
@@ -747,7 +765,8 @@ def close_element(md, tok, i, stack, offset, links = {}):
         pass
     elif closed[0] == 'link-def':
         obj = closed[1][0]
-        dprint(f'        | storing new link def id={obj['link_id']} url={obj.get('url')} title={obj.get('title')}')
+        if DEBUG:
+            dprint(f'storing new link def id={obj['link_id']} url={obj.get('url')} title={obj.get('title')}')
         links[obj['link_id'].upper()] = (obj.get('url'), obj.get('title', ''))
     else:
         last = current[-1] if current else ''
@@ -908,11 +927,13 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     #        if md[j] in patterns:
     #            markers.append(j)
     #        j += 1
-    dprint(f'        | markers={markers}')
+    if DEBUG:
+        dprint(f'markers={markers}')
 
     while idx < len(markers):
         i = markers[idx]
-        dprint('        | ', i, md[i], tok, stl, stack[-1][0])
+        if DEBUG:
+            dprint(f'{i} {md[i]} {tok} {stl} {stack[-1][0]}')
         if i < tok:
             idx += 1
             continue
@@ -1037,7 +1058,8 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 tok += 1                
             else:
                 _, _, cp, _ = stack.pop()
-                dprint(f'        | span should be rolled back to cp={cp}', stack)
+                if DEBUG:
+                    dprint(f'span should be rolled back to cp={cp}')
                 wrong[cp] = 'span'
                 return cp
         elif md[i:i+1] == '<' and stack[-1][0] not in ['code','span'] and (md[i+1].isalpha() or md[i+1] in '/?!') and wrong.get(i) != 'span':
@@ -1167,12 +1189,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     return stop+1
 
 
-def dprint(*args, **kwargs):
-    """Custom print with a global switch for debug."""
-    if "DEBUG" in globals() and DEBUG:
-        print(*args, **kwargs)
-
-
 def transform(md: str, start: int = 0) -> str:
     """Render HTML from markdown string."""
     res = ''
@@ -1186,17 +1202,20 @@ def transform(md: str, start: int = 0) -> str:
     while True:
         eol = md.find("\n", i)
         eol = len(md) if eol == -1 else eol
-        dprint(f'{i:2} | {eol:2} | {repr(md[i:eol+1])} {phase}')
+        if DEBUG:
+            dprint(f'{repr(md[i:eol+1])} {phase}', i, eol)
         before = i
         
         if phase == "in_context":
-            dprint(f'{i:2} | _c | {".".join([x[0] for x in stack[0:]]):25}')
-#            before = i
+            if DEBUG:
+                dprint(f'{".".join([x[0] for x in stack[0:]]):25}', i, '_c')
             i = context(md, i, eol, stack, links, wrong)
-            dprint(f'        | after context i={i} => {".".join([x[0] for x in stack[0:]])}')
+            if DEBUG:
+                dprint(f'after context i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_structure"
             if i < before:
-                dprint(f'        | ROLLBACK i={i} before={before}')
+                if DEBUG:
+                    dprint(f'ROLLBACK i={i} before={before}')
                 skip = 1
                 phase = "in_payload"
                 continue
@@ -1207,17 +1226,21 @@ def transform(md: str, start: int = 0) -> str:
                     phase = "in_structure" if i < eol else "fforward"
 
         if phase == "in_structure":
-            dprint(f'{i:2} | _s | {".".join([x[0] for x in stack[0:]]):25}')
+            if DEBUG:
+                dprint(f'{".".join([x[0] for x in stack[0:]]):25}', i, '_s')
             i = structure(md, i, eol, stack, links)
-            dprint(f'        | after structure i={i} => {".".join([x[0] for x in stack[0:]])}')
+            if DEBUG:
+                dprint(f'after structure i={i} => {".".join([x[0] for x in stack[0:]])}')
             phase = "in_payload" if i < eol else "fforward"
 
         if phase == "in_payload":
-            dprint(f'{i:2} | _p | {" ":25}')
+            if DEBUG:
+                dprint(f'{" ":25}', i, '_p')
             r = eol-1 if eol > 0 and md[eol-1] == '\r' else eol
             x = payload(md, i, r, stack, links, wrong, skip)
             skip = 0
-            dprint(f'        | after payload => {r:2} {stack[-1]}')
+            if DEBUG:
+                dprint(f'after payload => {r:2} {stack[-1]}')
 #            if x <= before:
             if x < r:
                 i = x
@@ -1229,15 +1252,18 @@ def transform(md: str, start: int = 0) -> str:
         phase = "in_context"
 
         if i >= len(md):
-            dprint(f'{i:2} | ef | eol={eol} {".".join([x[0] for x in stack[0:]]):25} ')
+            if DEBUG:
+                dprint(f'eol={eol} {".".join([x[0] for x in stack[0:]]):25} ', i, 'ef')
             before = i
             i = context('\n', i, eol, stack, links, wrong, close=True)
             if i < before:
-                dprint(f'        | ROLLBACK i={i} before={before}')
+                if DEBUG:
+                    dprint(f'ROLLBACK i={i} before={before}')
                 skip = 1
                 phase = "in_payload"
                 continue
-            dprint(f'        | => {".".join([x[0] for x in stack[0:]])}')
+            if DEBUG:
+                dprint(f'=> {".".join([x[0] for x in stack[0:]])}')
             break
 
     all_fragments = stack[0][1]
@@ -1246,8 +1272,9 @@ def transform(md: str, start: int = 0) -> str:
         all_fragments = all_fragments[1:]
     if all_fragments and all_fragments[-1] != '\n':
         all_fragments.append('\n')
-    dprint('\n', 'fragments', all_fragments)
-    dprint(' links', links, '\n')
+    if DEBUG:
+        dprint(f'fragments {all_fragments}')
+        dprint(f'links {links}\n')
     
     for j in range(len(all_fragments)-1, -1, -1):
         x = all_fragments[j]
