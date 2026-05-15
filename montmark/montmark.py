@@ -353,7 +353,6 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
 
     if hr:
         close = True
-
     if setext and stack[-1][0] in ['p', 'p_', 'span'] and stack[-2][0] not in ['blockquote', 'li']:
         elt = 'h1' if setext == '=' else 'h2'
         if stack[-1][1][-1] == '<br />':
@@ -412,7 +411,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 #i -= 1
                 i = i0 - 1
         elif node == 'li':
-            offset, _ = stack[node_cursor-1][3]
+            offset, _, _ = stack[node_cursor-1][3]
             dprint(f'        | li with offset {offset}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 _, _, _, w = indentation(md, start)
@@ -435,9 +434,13 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 node_cursor += 1
                 i -= 1
         elif node in ['ul', 'ol']:
+            _, _, marker = stack[node_cursor][3]
             if seq == '#':
                 i = ii
                 broken = True
+#            elif md[i] != marker:
+#                i = ii
+#                broken = True
             else:
                 node_cursor += 1
                 i = i0 - 1
@@ -539,7 +542,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif element in ['title']:
             stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
         elif element in ['url']:
-            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:/?=&*()")
+            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:;,+/?=&*()")
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
@@ -548,7 +551,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 if link_id.upper() not in links:
                     dprint(f'        | storing new link def id={link_id} url={url} title={title}')
 #                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title.replace('\\', ''))
-                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title)
+                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()"), title)
             else:
                 wrong[rb] = 'link-def'
                 stack.append(('p', [], i, False))
@@ -631,7 +634,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ul', [], i, (offset+ix-i0, None)))
+                stack.append(('ul', [], i, (offset+ix-i0, None, md[i])))
             stack.append(('li', [], i, 0))
             i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
@@ -641,7 +644,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]))))
+                stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]), md[i])))
             stack.append(('li', [], i, 0))
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
@@ -713,7 +716,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
         url = ''.join(closed[1]).rstrip(' ')
         if ' ' in url:
             return -1
-        url = quote(html.unescape(url.rstrip(' \t')), safe="%:/?=&*()")
+        url = quote(html.unescape(url.rstrip(' \t')), safe="%:;,+/?=&*()")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -721,7 +724,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == '<url>':
         prev = stack[-2][1]
         url = ''.join(closed[1])
-        url = quote(url.replace('\\', ''), safe="%:/?=&*()")
+        url = quote(url.replace('\\', ''), safe="%:;,+/?=&*()")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -786,9 +789,12 @@ def check_span(md: str, tok: int, i: int):
     """Validate and identify span type."""
     span = md[tok+1:i]
     if '@' in span:
-        return 'automail'
+        if '\\' not in span:
+            return 'automail'
+        else:
+            return None
     elif ':' in span:
-        if ' ' not in span:
+        if ' ' not in span and md.find(':', tok, i) > tok+2:
             return 'autolink'
         else:
             return None
@@ -913,6 +919,10 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         if i == prev_i+1:
             idx += 1
             continue
+#        if md[i] == '\\' and stack[-1][0] in ['span']:
+#            _, _, rb, _ = stack.pop()
+#            wrong[rb] = 'span'
+#            return rb
         if md[i] == '\\' and md[i+1] in BACKSLASH_ESCAPED and stack[-1][0] not in ['indented', 'code', 'span']:
             c = md[i+1]
             stack[-1][1].append(md[tok:i] + basic_entity_substitution(c))
@@ -1013,7 +1023,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             elif typ == 'autolink':
                 txt = md[tok+1:i]
                 descr = txt.translate(HE_TR)
-                url = quote(txt.translate(HE_TR), safe="%:/?=&*")
+                url = quote(txt.translate(HE_TR), safe="%:;,+/?=&*")
                 stack[-1] = ('a', [{'square': descr, 'url': url}], None, '')
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
