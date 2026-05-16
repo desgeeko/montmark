@@ -63,6 +63,7 @@ def dprint(*args, **kwargs):
         idx[i-1] = args[i]
     sep = '|' if idx[0] else ' '
     print(f" {idx[0]:2} {sep} {idx[1]:2} | {args[0]}")
+    return
 
 
 def check_setext(md: str, start = 0):
@@ -316,10 +317,6 @@ def html_text(element: str, content, params, last):
             content.insert(0, '\n')
     elif element in ['br']:
         content[-1] = f'<{element} />'
-    #elif element in ['html']:
-    #    content.insert(0, '\n')
-    #    if content[-1] != '\n':
-    #        content.append('\n')
     elif element in ['html', 'raw', 'link-def']:
         pass
     else:
@@ -372,7 +369,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         cp = stack[-1][2]
         if stack[-1][0] == 'span':
             stack.pop()
-        stack[-1] = (elt, content, cp, None)
+        stack[-1] = [elt, content, cp, None]
         return eol
 
     while i < stop + 1 and not close:
@@ -537,7 +534,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
 
     for _ in range(nb_exited):
         if stack[-1][0] == 'p_' and p_ending:
-            stack[-1] = ('p', stack[-1][1], stack[-1][2], True)
+            stack[-1][0] = 'p'
+            stack[-1][3] = True
         if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
             stack[-1][1][0] = ''
             stack[-1][1][1] = ''
@@ -555,7 +553,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             wrong[rb] = element
             return rb
         elif element in ['title']:
-            stack[-2] = (stack[-2][0], [{}], stack[-2][2], stack[-2][3])
+            stack[-2][1] = [{}]
         elif element in ['url']:
             stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:;,+/?=&*()")
         elif element in ['link-def']:
@@ -563,14 +561,13 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             url = fragments[0].get('url')
             title = fragments[0].get('title', '')
             if link_id and url is not None:
-                if link_id.upper() not in links:
+                if link_id.casefold() not in links:
                     if DEBUG:
                         dprint(f'storing new link def id={link_id} url={url} title={title}')
-#                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:/?=&*()"), title.replace('\\', ''))
-                    links[link_id.upper()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()"), title)
+                    links[link_id.casefold()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()"), title)
             else:
                 wrong[rb] = 'link-def'
-                stack.append(('p', [], i, False))
+                stack.append(['p', [], i, False])
                 return rb
         else:
             current = stack[-1][1]
@@ -589,7 +586,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
         return i
     hr, eol = check_hr(md, i)
     if hr:
-        stack.append(('hr', [], i, None))
+        stack.append(['hr', [], i, None])
         return eol
     if stack[-1][0] in ['html', 'link_id', 'link']:
         return i
@@ -605,14 +602,13 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
 
         if md[i:i+1] == '[' and w < 4 and md.find(']:', i, stop) != -1 and stack[-1][0] != 'p': #TODO refactor eol check
             struct_init = {}
-            stack.append(('link-def', [{}], i, None))
+            stack.append(['link-def', [{}], i, None])
             return i
         elif seq in '`~' and w < 4 and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
-                nb = stack[-1][3] + 1 if stack[-1][3] else 1
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
             lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
-            stack.append(('fenced', [], i, (seq, w2, lang, w)))
+            stack.append(['fenced', [], i, (seq, w2, lang, w)])
             i = stop
             return i
         elif md[i] in '\r\n' and seq not in '#`':
@@ -626,33 +622,30 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 _, ii, sp_or_tabs, w = indentation(md, i0+1, extra)
             add_spaces = w - 4
             if stack[-1][0] == 'li':
-                nb = stack[-1][3] + 1 if stack[-1][3] else 1
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-            stack.append(('indented', [], i, add_spaces))
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+            stack.append(['indented', [], i, add_spaces])
             return ii
         elif seq  == '#' and md[i] in ' \t\n' and w < 4 and w2 <= 6:
-            stack.append((f'h{w2}', [], i, None))
+            stack.append([f'h{w2}', [], i, None])
             return i+1
         elif md[i] == '>':
             if stack[-1][0] == 'li':
-                nb = stack[-1][3] + 1 if stack[-1][3] else 1
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-            stack.append(('blockquote', [], i, None))
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+            stack.append(['blockquote', [], i, None])
         elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
 #            if stack[-1][0] == 'li':
 #                nb = stack[-1][3] + 1 if stack[-1][3] else 1
-#                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+#                stack[-1] = [stack[-1][0], stack[-1][1], stack[-1][2], nb]
             if stack[-1][0] != 'ul':
                 if stack[-1][0] == 'li':
-                    nb = stack[-1][3] + 1 if stack[-1][3] else 1
-                    stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
+                    stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
                 if len(stack) >= 2 and stack[-2][0] == 'ul':
                     offset = stack[-2][3][0]
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ul', [], i, (offset+ix-i0, None, md[i])))
-            stack.append(('li', [], i, 0))
+                stack.append(['ul', [], i, (offset+ix-i0, None, md[i])])
+            stack.append(['li', [], i, 0])
             i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
@@ -661,8 +654,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(('ol', [], i, (offset+ix-i0, int(md[i0:i]), md[i])))
-            stack.append(('li', [], i, 0))
+                stack.append(['ol', [], i, (offset+ix-i0, int(md[i0:i]), md[i])])
+            stack.append(['li', [], i, 0])
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             if DEBUG:
@@ -672,19 +665,18 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 current = stack[-1][1]
                 current += md[i0:stop]
             else:
-                stack.append(('html', [md[i0:stop]], i, condition))
+                stack.append(['html', [md[i0:stop]], i, condition])
             return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
-            nb = stack[-1][3] + 1 if stack[-1][3] else 1
             if stack[-1][0] == 'li' and stack[-1][3] == 0:
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p_', [], ii, False))
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack.append(['p_', [], ii, False])
             elif stack[-1][0] == 'li' and stack[-1][3] == 1:
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p', [], ii, False))
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack.append(['p', [], ii, False])
             else:
-                stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], nb)
-                stack.append(('p', [], ii, False))
+                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack.append(['p', [], ii, False])
             return ii
         else:
             return ii
@@ -697,7 +689,7 @@ def open_element(md, tok, i, stack, offset, element, params, init = None):
     """Flush segment and add new span element."""
     stack[-1][1].append(md[tok:i-offset+1])
     init = [] if init == None else init
-    stack.append((element, init, i-offset+1, params))
+    stack.append([element, init, i-offset+1, params])
     tok = i + 1
     return tok
 
@@ -767,7 +759,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
         obj = closed[1][0]
         if DEBUG:
             dprint(f'storing new link def id={obj['link_id']} url={obj.get('url')} title={obj.get('title')}')
-        links[obj['link_id'].upper()] = (obj.get('url'), obj.get('title', ''))
+        links[obj['link_id'].casefold()] = (obj.get('url'), obj.get('title', ''))
     else:
         last = current[-1] if current else ''
         current += html_text(closed[0], closed[1], closed[3], last)
@@ -933,7 +925,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     while idx < len(markers):
         i = markers[idx]
         if DEBUG:
-            dprint(f'{i} {md[i]} {tok} {stl} {stack[-1][0]}')
+            dprint(f'{i} {md[i]} {tok} {stl} {stack[-1][0]} {stack}')
         if i < tok:
             idx += 1
             continue
@@ -1037,7 +1029,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 typ = check_span(md, tok, i)
             if typ == 'raw':
                 _, content, cp, params = stack[-1]
-                stack[-1] = (typ, content, cp, params)
+                stack[-1] = [typ, content, cp, params]
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1
                 stl = True
@@ -1045,7 +1037,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 txt = md[tok+1:i]
                 descr = txt.translate(HE_TR)
                 url = quote(txt.translate(HE_TR), safe="%:;,+/?=&*")
-                stack[-1] = ('a', [{'square': descr, 'url': url}], None, '')
+                stack[-1] = ['a', [{'square': descr, 'url': url}], None, '']
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
             elif typ == 'automail':
@@ -1053,7 +1045,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 prefix = 'mailto:' if '@' in txt and 'mailto' not in txt.lower() else ''
                 url = prefix + txt
                 url = url.translate(HE_TR)
-                stack[-1] = ('a', [{'square': txt, 'url': url}], None, '')
+                stack[-1] = ['a', [{'square': txt, 'url': url}], None, '']
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
             else:
@@ -1097,19 +1089,19 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             else:
                 tok = open_element(md, tok, i, stack, 1, 'url', 0)
         elif stl and md[i:i+1] == ']' and stack[-1][0] == 'square2':
-            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]-1)
+            stack[-1][3] -= 1
             if stack[-1][3] == 0:
                 tok = close_element(md, tok, i, stack, 1)
                 tok = keep_struct(md, tok, i-1, stack, 1)
                 tok += 1
         elif stl and md[i:i+1] == ']' and stack[-1][0] == 'square':
-            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]-1)
+            stack[-1][3] -= 1
             if stack[-1][3] == 0:
                 tok = close_element(md, tok, i, stack, 1)
                 if md[i+1:i+2] not in '[(':
                     tok = keep_struct(md, tok, i, stack, 1)
         elif stl and md[i:i+1] == ']' and stack[-1][0] == 'link-id':
-            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]-1)
+            stack[-1][3] -= 1
             if stack[-1][3] == 0:
                 tok = close_element(md, tok, i, stack, 1)
                 tok = open_element(md, tok, i, stack, 1, 'link', 1)
@@ -1121,12 +1113,12 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 elif md[ii] != '\n':
                     tok = open_element(md, tok, ii-1, stack, 1, 'url', 0)
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2']:
-            stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], stack[-1][3]+1)
+            stack[-1][3] += 1
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip and wrong.get(i) != 'square2':
             tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'square2', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
@@ -1163,7 +1155,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
 
     if stack[-1][0] == 'indented' and stack[-1][3]:
         s = ' ' * stack[-1][3] + s
-        stack[-1] = (stack[-1][0], stack[-1][1], stack[-1][2], None)
+        stack[-1][3] = None
 
     if last_elt[0]  == 'h':
         s = s.lstrip(' ').rstrip(' ')
@@ -1193,7 +1185,7 @@ def transform(md: str, start: int = 0) -> str:
     """Render HTML from markdown string."""
     res = ''
     i = start
-    stack = [('root', [], i, None)] #node, accu, checkpoint, optional parameters
+    stack = [['root', [], i, None]] #node, accu, checkpoint, optional parameters
     links = {}
     wrong = {}
     phase = "in_context"
@@ -1278,11 +1270,11 @@ def transform(md: str, start: int = 0) -> str:
     
     for j in range(len(all_fragments)-1, -1, -1):
         x = all_fragments[j]
-        if type(x) == tuple:
+        if type(x) == list:
             obj = x[1][0]
             if 'link_id' in obj:
                 link_id = obj['link_id']
-                obj['url'], obj['title'] = links.get(link_id.upper(), (None, ''))
+                obj['url'], obj['title'] = links.get(link_id.casefold(), (None, ''))
             all_fragments.pop(j)
             if obj['url'] is not None:
                 link = html_text(x[0], x[1], x[3], '')
