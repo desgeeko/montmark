@@ -1062,6 +1062,11 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif stl and stack[-1][0] == 'title' and md[i:i+1] == MATCHING.get(stack[-1][3]) :
             tok = close_element(md, tok, i, stack, 1)
             tok = close_element(md, tok, i, stack, 1)
+            _, p_i, _, _ = indentation(md, i+1, stop)
+            if md[p_i] not in ')\n':
+                element, _, cp, _ = stack.pop()
+                wrong[cp] = element
+                return cp
             tok = close_element(md, tok, i, stack, 1, links)
             tok = stop
         elif stl and md[i:i+1] in ['"', "'", '('] and md[i-1:i] == ' ' and stack[-1][0] in ['url'] and not skip:
@@ -1072,6 +1077,10 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif stl and md[i:i+1] in ['"', "'", '('] and stack[-1][0] in ['link'] and not skip:
             tok = open_element(md, tok, i, stack, 1, 'title', md[i])
         elif stl and md[i:i+1] == ')' and stack[-1][0] in ['url'] and stack[-3][0] != 'link-def':
+            stack[-2][3] -= 1
+            if stack[-2][3] != 0:
+                idx += 1
+                continue
             tok = close_element(md, tok, i, stack, 1)
             if tok == -1:
                 stack.pop()
@@ -1083,8 +1092,10 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             else:
                 tok = close_element(md, tok, i, stack, 1)
                 tok = close_element(md, tok, i, stack, 1)
+        elif stl and md[i:i+1] == '(' and stack[-1][0] in ['url', '<url>']:
+            stack[-2][3] += 1
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
-            tok = open_element(md, tok, i, stack, 1, 'link', None)
+            tok = open_element(md, tok, i, stack, 1, 'link', 1)
             if md[i+1] == '<':
                 tok = open_element(md, tok, i+1, stack, 1, '<url>', 0)
             else:
