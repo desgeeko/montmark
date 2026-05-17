@@ -925,7 +925,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     while idx < len(markers):
         i = markers[idx]
         if DEBUG:
-            dprint(f'{i} {md[i]} {tok} {stl} {stack[-1][0]} {stack}')
+            dprint(f'{i} {md[i]} {tok} {stl} {stack[-1][0]}')
         if i < tok:
             idx += 1
             continue
@@ -1082,6 +1082,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 continue
             else:
                 tok = close_element(md, tok, i, stack, 1)
+                tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
             tok = open_element(md, tok, i, stack, 1, 'link', None)
             if md[i+1] == '<':
@@ -1112,13 +1113,13 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                     idx += 1
                 elif md[ii] != '\n':
                     tok = open_element(md, tok, ii-1, stack, 1, 'url', 0)
-        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2']:
+        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2'] and md[i-1] != '!':
             stack[-1][3] += 1
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip and wrong.get(i) != 'square2':
             tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square', 'square2', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square2', 'link-id'] and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
