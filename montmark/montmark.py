@@ -545,17 +545,17 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
-        if element in ['em', 'strong', 'code', 'span', 'square', 'square2']:
+        if element in ['em', 'strong', 'code', 'span', 'square', 'square2'] or (element == 'link' and stack[-1][0] in['a', 'img']):
             if DEBUG:
                 dprint(f'{element} should be rolled back to rb={rb} params={params}')
-            if element in ['square', 'square2']:
-                stack.pop()
+            if element in ['square', 'square2', 'link']:
+                element, _, rb, _ = stack.pop()
             wrong[rb] = element
             return rb
         elif element in ['title']:
             stack[-2][1] = [{}]
         elif element in ['url']:
-            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:;,+/?=&*()")
+            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:;,+/?=&*()#")
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
@@ -564,7 +564,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 if link_id.casefold() not in links:
                     if DEBUG:
                         dprint(f'storing new link def id={link_id} url={url} title={title}')
-                    links[link_id.casefold()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()"), title)
+                    links[link_id.casefold()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()#"), title)
             else:
                 wrong[rb] = 'link-def'
                 stack.append(['p', [], i, False])
@@ -726,7 +726,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
         url = ''.join(closed[1]).rstrip(' ')
         if ' ' in url:
             return -1
-        url = quote(html.unescape(url.rstrip(' \t')), safe="%:;,+/?=&*()")
+        url = quote(html.unescape(url.rstrip(' \t')), safe="%:;,+/?=&*()#")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -734,7 +734,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == '<url>':
         prev = stack[-2][1]
         url = ''.join(closed[1])
-        url = quote(url.replace('\\', ''), safe="%:;,+/?=&*()")
+        url = quote(url.replace('\\', ''), safe="%:;,+/?=&*()#")
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -1036,7 +1036,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             elif typ == 'autolink':
                 txt = md[tok+1:i]
                 descr = txt.translate(HE_TR)
-                url = quote(txt.translate(HE_TR), safe="%:;,+/?=&*")
+                url = quote(txt.translate(HE_TR), safe="%:;,+/?=&*#")
                 stack[-1] = ['a', [{'square': descr, 'url': url}], None, '']
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
@@ -1070,6 +1070,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = close_element(md, tok, i, stack, 1, links)
             tok = stop
         elif stl and md[i:i+1] in ['"', "'", '('] and md[i-1:i] == ' ' and stack[-1][0] in ['url'] and not skip:
+            _, tok, _, _ = indentation(md, tok, i)
             tok = close_element(md, tok, i-1, stack, 1)
             tok = open_element(md, tok, i, stack, 1, 'title', md[i])
         elif stl and md[i:i+1] in ['>'] and stack[-1][0] in ['<url>'] and not skip:
@@ -1100,6 +1101,17 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             idx = markers.index(rb)
             continue
 #            return rb
+        elif stl and md[i:i+1] == ')' and stack[-1][0] in ['link']:
+            after_s = md[tok:i]
+            tok = close_element(md, tok, i, stack, 1)
+            if after_s.strip() != '':
+                _, _, rb, _ = stack.pop()
+                wrong[rb] = 'a'
+                tok = rb
+                idx = markers.index(rb)
+                continue
+            else:
+                tok = close_element(md, tok, i, stack, 1)
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['url', '<url>']:
             stack[-2][3] += 1
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['a','img'] and not skip:
@@ -1160,6 +1172,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     last_content = stack[-1][1]
 
     if stack[-1][0] in ['url']:
+        _, tok, _, _ = indentation(md, tok, i)
         tok = close_element(md, tok, stop, stack, 1)
     elif stack[-1][0] in ['<url>']:
         stack.pop()
@@ -1252,7 +1265,7 @@ def transform(md: str, start: int = 0) -> str:
             x = payload(md, i, r, stack, links, wrong, skip)
             skip = 0
             if DEBUG:
-                dprint(f'after payload => {r:2} {stack[-1]}')
+                dprint(f'after payload => {r:2} {".".join([x[0] for x in stack[0:]]):40}')
 #            if x <= before:
             if x < r:
                 i = x
