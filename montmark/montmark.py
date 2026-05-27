@@ -44,7 +44,7 @@ link main menu menuitem nav noframes ol optgroup option p param search
 section summary table tbody td tfoot th thead title tr track ul
 '''.split()
 
-SP = ' \xa0\n'
+SP = '\t \xa0\n\r'
 PUNCTUATION = '_-(){}[]"\'.,!?@#$€£'
 SEPS = SP + PUNCTUATION
 
@@ -715,7 +715,8 @@ def close_element(md, tok, i, stack, offset, links = {}):
         current[0]['square'] = text
         current[0]['alt'] = raw
         current[0]['link_id'] = text
-        current[0]['original'] = '[' + text + ']'
+        current[0]['original'] = '!' if stack[-1][0] == 'img' else ''
+        current[0]['original'] += '[' + text + ']'
         tok = i + offset
     if closed[0] == 'link-id':
         current[0]['link_id'] = ''.join(closed[1])
@@ -816,33 +817,59 @@ def check_span(md: str, tok: int, i: int):
             return None
 
 
-def is_flank(md: str, pattern: str, i: int, side: str):
-    """Assert if delimiter is left or right flanking."""
-    inner = i+1 if side == 'LEFT' else i-1-len(pattern)+1
-    outer = i-1-len(pattern)+1 if side == 'LEFT' else i+1
-    if (
-            #(md[i+1] != pattern[0] or side == 'RIGHT') *foo**
-            md[i+1] != pattern[0]
-            and md[inner] not in SP
-            and (not md[inner] in PUNCTUATION or (md[inner] in PUNCTUATION and md[outer] in SEPS))
-    ):
-        return True
-    return False
+#def is_flank(md: str, pattern: str, i: int, side: str):
+#    """Assert if delimiter is left or right flanking."""
+#    inner = i+1 if side == 'LEFT' else i-1-len(pattern)+1
+#    outer = i-1-len(pattern)+1 if side == 'LEFT' else i+1
+#    if (
+#            #(md[i+1] != pattern[0] or side == 'RIGHT') *foo**
+#            md[i+1] != pattern[0]
+#            and md[inner] not in SP
+#            and (not md[inner] in PUNCTUATION or (md[inner] in PUNCTUATION and md[outer] in SEPS))
+#    ):
+#        return True
+#    return False
 
 
-def is_underscore_del(md: str, pattern: str, i: int, side: str):
-    """Assert if underscore delimiter is left or right flanking."""
-    opp_side = 'RIGHT' if side == 'LEFT' else 'LEFT'
-    inner = is_flank(md, pattern, i, side)
-    outer = is_flank(md, pattern, i, opp_side)
-    p = i-1-len(pattern)+1 if side == 'LEFT' else i+1
-    if (
-        md[i+1] != pattern[0]
-        and inner
-        and (not outer or (outer and md[p] in PUNCTUATION))
-    ):
-        return True
-    return False
+#def is_underscore_del(md: str, pattern: str, i: int, side: str):
+#    """Assert if underscore delimiter is left or right flanking."""
+#    opp_side = 'RIGHT' if side == 'LEFT' else 'LEFT'
+#    inner = is_flank(md, pattern, i, side)
+#    outer = is_flank(md, pattern, i, opp_side)
+#    p = i-1-len(pattern)+1 if side == 'LEFT' else i+1
+#    if (
+#        md[i+1] != pattern[0]
+#        and inner
+#        and (not outer or (outer and md[p] in PUNCTUATION))
+#    ):
+#        return True
+#    return False
+
+
+def detect_del_run(md: str, start: int, stop: int):
+    """Assert if start of a delimiter run."""
+    i = del_b = del_e = start
+    while i < stop:
+        i += 1
+        if md[i] == md[del_b]:
+            del_e = i
+        else:
+            break
+    punc_before = md[del_b-1] in PUNCTUATION if del_b > 0 else False
+    punc_after  = md[del_e+1] in PUNCTUATION if del_e < stop else False
+    ws_before = md[del_b-1] in SP if del_b > 0 else True
+    ws_after  = md[del_e+1] in SP if del_e < stop else True
+    is_left = not ws_after and (not punc_after or (punc_after and (ws_before or punc_before)))
+    is_right = not ws_before and (not punc_before or (punc_before and (ws_after or punc_after)))
+    if md[del_b] == '*':
+        can_open = is_left
+        can_close = is_right
+    elif md[del_b] == '_':
+        can_open = is_left and (not is_right or (is_right and punc_before))
+        can_close = is_right and (not is_left or (is_left and punc_after))
+    else:
+        return (md[start], None, None, False, False)
+    return (md[start], del_b, del_e+1, can_open, can_close)
 
 
 def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> list:
@@ -854,6 +881,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     skip = False
     found_bs = False
     prev_i = -2
+    current_run = None
 
     if stack[-1][0] in ['p', 'p_', 'indented', 'em', 'strong', 'span'] and offset == 0 and stack[-1][1]:
         stack[-1][1].append('\n')
@@ -972,31 +1000,51 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             else:
                 idx = 0 #TODO fix
             continue
-        if stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == 'em' and stack[-1][0] == 'strong':
-            tok = close_element(md, tok, i, stack, 3)
-            tok = close_element(md, tok, i, stack, 3)
-            tok -= 2
-        elif stl and i > 0 and md[i-1:i+1] == '**' and stack[-1][0] == 'strong' and is_flank(md, '**', i, 'RIGHT'):
-            tok = close_element(md, tok, i, stack, 2)
-            tok -= 1
-        elif stl and i > 0 and md[i-1:i+1] == '__' and stack[-1][0] == 'strong' and is_underscore_del(md, '__', i, 'RIGHT'):
-            tok = close_element(md, tok, i, stack, 2)
-            tok -= 1
-        elif stl and md[i] == '*' and md[i-1] != '*' and stack[-1][0] == 'em' and is_flank(md, md[i], i, 'RIGHT'):
-            tok = close_element(md, tok, i, stack, 1)
-        elif stl and md[i] in ['_'] and md[i-1] != '_' and stack[-1][0] in ('em') and is_underscore_del(md, md[i], i, 'RIGHT'):
-            tok = close_element(md, tok, i, stack, 1)
-        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP and wrong.get(i-2) not in ['strong', 'em']:
-            tok = open_element(md, tok, i, stack, 3, 'em', None)
-            tok = open_element(md, tok, i, stack, 3, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['**'] and is_flank(md, '**', i, 'LEFT') and wrong.get(i-1) != 'strong':
-            tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and i > start and md[i-1:i+1] in ['__'] and is_underscore_del(md, '__', i, 'LEFT') and wrong.get(i-1) != 'strong':
-            tok = open_element(md, tok, i, stack, 2, 'strong', None)
-        elif stl and md[i] == '*'  and is_flank(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
-            tok = open_element(md, tok, i, stack, 1, 'em', None)
-        elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
-            tok = open_element(md, tok, i, stack, 1, 'em', None)
+        if stl and md[i] in '*_':
+            if not current_run:
+                current_run = detect_del_run(md, i, stop)
+            c, b, e, can_open, can_close = current_run
+            if c != md[i] or i > e:
+                current_run = detect_del_run(md, i, stop)
+                c, b, e, can_open, can_close = current_run
+            if can_close and stack[-1][0] in ['em', 'strong'] :
+                if (e - i) % 2 == 1:
+                    tok = close_element(md, tok, i, stack, 1)
+                else:
+                    tok = close_element(md, tok, i+1, stack, 2)
+                    tok -= 1
+                    idx += 1
+            elif can_open and wrong.get(i) not in ['em', 'strong']:
+                if (e - i) % 2 == 1:
+                    tok = open_element(md, tok, i, stack, 1, 'em', None)
+                else:
+                    tok = open_element(md, tok, i+1, stack, 2, 'strong', None)
+                    idx += 1
+#        elif stl and i > 1 and md[i-2:i+1] in ['***','___'] and stack[-2][0] == 'em' and stack[-1][0] == 'strong':
+#            tok = close_element(md, tok, i, stack, 3)
+#            tok = close_element(md, tok, i, stack, 3)
+#            tok -= 2
+#        elif stl and i > 0 and md[i-1:i+1] == '**' and stack[-1][0] == 'strong' and is_flank(md, '**', i, 'RIGHT'):
+#            tok = close_element(md, tok, i, stack, 2)
+#            tok -= 1
+#        elif stl and i > 0 and md[i-1:i+1] == '__' and stack[-1][0] == 'strong' and is_underscore_del(md, '__', i, 'RIGHT'):
+#            tok = close_element(md, tok, i, stack, 2)
+#            tok -= 1
+#        elif stl and md[i] == '*' and md[i-1] != '*' and stack[-1][0] == 'em' and is_flank(md, md[i], i, 'RIGHT'):
+#            tok = close_element(md, tok, i, stack, 1)
+#        elif stl and md[i] in ['_'] and md[i-1] != '_' and stack[-1][0] in ('em') and is_underscore_del(md, md[i], i, 'RIGHT'):
+#            tok = close_element(md, tok, i, stack, 1)
+#        elif stl and i > start+1 and md[i-2:i+1] in ['***', '___'] and md[i+1] != md[i] and md[i+1] not in SP and wrong.get(i-2) not in ['strong', 'em']:
+#            tok = open_element(md, tok, i, stack, 3, 'em', None)
+#            tok = open_element(md, tok, i, stack, 3, 'strong', None)
+#        elif stl and i > start and md[i-1:i+1] in ['**'] and is_flank(md, '**', i, 'LEFT') and wrong.get(i-1) != 'strong':
+#            tok = open_element(md, tok, i, stack, 2, 'strong', None)
+#        elif stl and i > start and md[i-1:i+1] in ['__'] and is_underscore_del(md, '__', i, 'LEFT') and wrong.get(i-1) != 'strong':
+#            tok = open_element(md, tok, i, stack, 2, 'strong', None)
+#        elif stl and md[i] == '*'  and is_flank(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
+#            tok = open_element(md, tok, i, stack, 1, 'em', None)
+#        elif stl and md[i] == '_' and md[i-1] != '_' and is_underscore_del(md, md[i], i, 'LEFT') and wrong.get(i) != 'em':
+#            tok = open_element(md, tok, i, stack, 1, 'em', None)
         elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
             stl = True
             tok = close_element(md, tok, i, stack, 3)
@@ -1201,15 +1249,15 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     if s:
         last_content.append(s)
 
-    if last_elt in ['p', 'p_', 'em'] and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
+    if last_elt in ['p', 'p_', 'em'] and last_content and len(last_content[-1]) > 2 and last_content[-1][-2:] == '  ':
         last_content[-1] = last_content[-1].rstrip(' ')
         stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
-    elif last_elt in ['p', 'p_', 'em'] and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
+    elif last_elt in ['p', 'p_', 'em'] and last_content and len(last_content[-1]) > 1 and last_content[-1][-1] == '\\':
         last_content[-1] = last_content[-1].rstrip('\\')
         stack.append(('br', [''], 0, None))
         close_element(md, 0, 0, stack, 0)
-    elif last_elt in ['p', 'p_'] and len(last_content[-1]) > 1 and last_content[-1][-1] == ' ':
+    elif last_elt in ['p', 'p_'] and last_content and len(last_content[-1]) > 1 and last_content[-1][-1] == ' ':
         last_content[-1] = last_content[-1].rstrip(' ')
     return stop+1
 
