@@ -639,10 +639,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             if stack[-1][0] == 'li':
                 stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
             stack.append(['blockquote', [], i, None])
-        elif md[i] in '+-*' and i+1<len(md) and md[i+1] in ' \t':
-#            if stack[-1][0] == 'li':
-#                nb = stack[-1][3] + 1 if stack[-1][3] else 1
-#                stack[-1] = [stack[-1][0], stack[-1][1], stack[-1][2], nb]
+        elif md[i] in '+-*' and i+1<len(md) and (md[i+1] in ' \t' or (md[i+1] in '\n' and stack[-1][0] != 'p')):
             if stack[-1][0] != 'ul':
                 if stack[-1][0] == 'li':
                     stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
@@ -653,10 +650,11 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 _, ix, _, _ = indentation(md, i+1)
                 oo = offset+ix-i0
                 oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
+                (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
                 stack.append(['ul', [], i, (oo, None, md[i])])
             stack.append(['li', [], i, 0])
             i += 1
-        elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
+        elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and (md[i+1] in ' \t' or (md[i+1] in '\n' and stack[-1][0] != 'p')) and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
                 if len(stack) >= 2 and stack[-2][0] == 'ol':
                     offset = stack[-2][3][0]
