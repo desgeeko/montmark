@@ -550,7 +550,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 dprint(f'{element} should be rolled back to rb={rb} params={params}')
             if element in ['square', 'square2', 'link']:
                 element, _, rb, _ = stack.pop()
-            wrong[rb] = [element]
+            wrong[rb] = [element] if not wrong.get(rb) else wrong[rb] + [element]
             return rb
         elif element in ['title']:
             stack[-2][1] = [{}]
@@ -980,26 +980,26 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 c, b, e, can_open, can_close = current_run
             if DEBUG:
                 dprint(f'        Del RUN {c} {b} {e} {can_open} {can_close}')
-            if can_close and stack[-1][0] in ['em'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run:
+            if can_close and stack[-1][0] in ['em'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run and ((e-b) != 2 or not can_open) and i+1 != stack[-1][3][2]:
                 tok = close_element(md, tok, i, stack, 1)
-            elif can_close and stack[-1][0] in ['strong'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run:
+            elif can_close and stack[-1][0] in ['strong'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run and ((e-b) != 1 or not can_open):
                 if (e - i) < 2:
                     pass
                 else:
                     tok = close_element(md, tok, i+1, stack, 2)
                     tok -= 1
                     idx += 1
-            elif can_open and 'em' not in wrong.get(i, []) and 'strong' not in wrong.get(i, []):
-                if (e - i) % 2 == 1:
-                    tok = open_element(md, tok, i, stack, 1, 'em', current_run)
-                else:
-                    tok = open_element(md, tok, i+1, stack, 2, 'strong', current_run)
-                    idx += 1
-#            elif can_open and (e - i) % 2 == 0 and wrong.get(i) not in ['strong']:
-#                tok = open_element(md, tok, i+1, stack, 2, 'strong', current_run)
-#                idx += 1
-#            elif can_open and wrong.get(i) not in ['em']:
-#                tok = open_element(md, tok, i, stack, 1, 'em', current_run)
+            elif can_open and (e - i) % 2 == 0 and 'strong' not in wrong.get(i, []):
+                tok = open_element(md, tok, i+1, stack, 2, 'strong', current_run)
+                idx += 1
+            elif can_open and 'em' not in wrong.get(i, []):
+                tok = open_element(md, tok, i, stack, 1, 'em', current_run)
+#            elif can_open and 'em' not in wrong.get(i, []):
+#                if (e - i) % 2 == 1:
+#                    tok = open_element(md, tok, i, stack, 1, 'em', current_run)
+#                else:
+#                    tok = open_element(md, tok, i+1, stack, 2, 'strong', current_run)
+#                    idx += 1
         elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
             stl = True
             tok = close_element(md, tok, i, stack, 3)
