@@ -47,6 +47,8 @@ section summary table tbody td tfoot th thead title tr track ul
 SP = '\t \xa0\n\r'
 PUNCTUATION = '_-(){}[]"\'.,!?@#$€£'
 SEPS = SP + PUNCTUATION
+SAFE = '%:;,+/?=&*()#'
+
 
 patterns = ['*', '_', '`', '[', ']', '(', ')', '<', '>', '&', '\\', '"', "'"]
 escaped = [re.escape(pattern) for pattern in patterns]
@@ -425,7 +427,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif node == 'li':
             offset, _, _ = stack[node_cursor-1][3]
             if DEBUG:
-                dprint(f'li with offset {offset}', node_cursor)
+                dprint(f'li with offset {offset} ii={ii} w={w} {stack}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] == '.'):
                 _, _, _, w = indentation(md, start)
                 #if i-start < offset:
@@ -452,7 +454,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             if seq == '#':
                 i = ii
                 broken = True
-#            elif md[i] != marker:
+#            elif md[ii] in '-+*' and md[ii] != marker:
 #                i = ii
 #                broken = True
             else:
@@ -559,7 +561,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif element in ['title']:
             stack[-2][1] = [{}]
         elif element in ['url']:
-            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe="%:;,+/?=&*()#")
+            stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe=SAFE)
         elif element in ['link-def']:
             link_id = fragments[0].get('link_id')
             url = fragments[0].get('url')
@@ -568,7 +570,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 if link_id.casefold() not in links:
                     if DEBUG:
                         dprint(f'storing new link def id={link_id} url={url} title={title}')
-                    links[link_id.casefold()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()#"), title)
+                    links[link_id.casefold()] = (quote(url.replace('\\', ''), safe=SAFE), title)
             else:
                 wrong[rb] = ['link-def']
                 stack.append(['p', [], i, False])
@@ -736,7 +738,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
         url = ''.join(closed[1]).rstrip(' ')
         if ' ' in url:
             return -1
-        url = quote(html.unescape(url.rstrip(' \t')), safe="%:;,+/?=&*()#")
+        url = quote(html.unescape(url.rstrip(' \t')), safe=SAFE)
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -744,7 +746,7 @@ def close_element(md, tok, i, stack, offset, links = {}):
     elif closed[0] == '<url>':
         prev = stack[-2][1]
         url = ''.join(closed[1])
-        url = quote(url.replace('\\', ''), safe="%:;,+/?=&*()#")
+        url = quote(url.replace('\\', ''), safe=SAFE)
         prev[0]['url'] = url
         if 'link_id' in prev[0]:
             prev[0]['link_id']
@@ -1042,7 +1044,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             elif typ == 'autolink':
                 txt = md[tok+1:i]
                 descr = txt.translate(HE_TR)
-                url = quote(txt.translate(HE_TR), safe="%:;,+/?=&*#")
+                url = quote(txt.translate(HE_TR), safe=SAFE)
                 stack[-1] = ['a', [{'square': descr, 'url': url}], None, '']
                 tok = close_element(md, tok, i, stack, 0)
                 tok += 1                
