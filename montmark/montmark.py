@@ -550,7 +550,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 dprint(f'{element} should be rolled back to rb={rb} params={params}')
             if element in ['square', 'square2', 'link']:
                 element, _, rb, _ = stack.pop()
-            wrong[rb] = element
+            wrong[rb] = [element]
             return rb
         elif element in ['title']:
             stack[-2][1] = [{}]
@@ -566,7 +566,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                         dprint(f'storing new link def id={link_id} url={url} title={title}')
                     links[link_id.casefold()] = (quote(url.replace('\\', ''), safe="%:;,+/?=&*()#"), title)
             else:
-                wrong[rb] = 'link-def'
+                wrong[rb] = ['link-def']
                 stack.append(['p', [], i, False])
                 return rb
         else:
@@ -897,7 +897,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         else:
             stack.pop()
             _, _, rb, _ = stack.pop()
-            wrong[rb] = 'a'
+            wrong[rb] = ['a']
             tok = rb
             return rb
     elif stack[-1][0] == 'title':
@@ -989,7 +989,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                     tok = close_element(md, tok, i+1, stack, 2)
                     tok -= 1
                     idx += 1
-            elif can_open and wrong.get(i) not in ['em', 'strong']:
+            elif can_open and 'em' not in wrong.get(i, []) and 'strong' not in wrong.get(i, []):
                 if (e - i) % 2 == 1:
                     tok = open_element(md, tok, i, stack, 1, 'em', current_run)
                 else:
@@ -1011,13 +1011,13 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif md[i:i+1] == '`' and md[i-1] != md[i] and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers and wrong.get(i-2) != 'code':
+        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers and 'code' not in wrong.get(i-2, []):
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
-        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers and wrong.get(i-1) != 'code':
+        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers and 'code' not in wrong.get(i-1, []):
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span'] and wrong.get(i) != 'code':
+        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span'] and 'code' not in wrong.get(i, []):
 #            if stack[-2][0] in ['a', 'img']:
 #                stack.pop()
 #                _, _, rb, _ = stack.pop()
@@ -1055,9 +1055,9 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 _, _, cp, _ = stack.pop()
                 if DEBUG:
                     dprint(f'span should be rolled back to cp={cp}')
-                wrong[cp] = 'span'
+                wrong[cp] = ['span']
                 return cp
-        elif md[i:i+1] == '<' and stack[-1][0] not in ['code','span'] and (md[i+1].isalpha() or md[i+1] in '/?!') and wrong.get(i) != 'span':
+        elif md[i:i+1] == '<' and stack[-1][0] not in ['code','span'] and (md[i+1].isalpha() or md[i+1] in '/?!') and 'span' not in wrong.get(i, []):
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
@@ -1068,7 +1068,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             _, p_i, _, _ = indentation(md, i+1, stop)
             if md[p_i] not in ')\n':
                 element, _, cp, _ = stack.pop()
-                wrong[cp] = element
+                wrong[cp] = [element]
                 return cp
             tok = close_element(md, tok, i, stack, 1, links)
             tok = stop
@@ -1089,7 +1089,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             if tok == -1:
                 stack.pop()
                 _, _, rb, _ = stack.pop()
-                wrong[rb] = 'a'
+                wrong[rb] = ['a']
                 tok = rb
                 idx = markers.index(rb)
                 continue
@@ -1099,7 +1099,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif stl and md[i:i+1] == '(' and stack[-1][0] in ['square'] and stack[-2][0] in ['a'] and md[i-1] == ']' and stack[-1][3] == 1:
             stack.pop()
             _, _, rb, _ = stack.pop()
-            wrong[rb] = 'a'
+            wrong[rb] = ['a']
             tok = rb
             idx = markers.index(rb)
             continue
@@ -1109,7 +1109,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = close_element(md, tok, i, stack, 1)
             if after_s.strip() != '':
                 _, _, rb, _ = stack.pop()
-                wrong[rb] = 'a'
+                wrong[rb] = ['a']
                 tok = rb
                 idx = markers.index(rb)
                 continue
@@ -1149,11 +1149,11 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                     tok = open_element(md, tok, ii-1, stack, 1, 'url', 0)
         elif stl and md[i:i+1] == '[' and stack[-1][0] in ['square', 'square2'] and md[i-1] != '!':
             stack[-1][3] += 1
-        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip and wrong.get(i) != 'square2':
+        elif stl and md[i:i+1] == '[' and stack[-1][0] in ['a', 'img'] and not skip and 'square2' not in wrong.get(i, []):
             tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square2', 'link-id']  and md.find(']', i, stop) != -1 and wrong.get(i) not in ['a', 'img', 'square']: #TODO refactor eol check
+        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square2', 'link-id']  and md.find(']', i, stop) != -1 and 'a' not in wrong.get(i, []) and 'img' not in wrong.get(i, []) and 'square' not in wrong.get(i, []): #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
@@ -1181,7 +1181,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         stack.pop()
         stack.pop()
         _, _, rb, _ = stack.pop()
-        wrong[rb] = 'a'
+        wrong[rb] = ['a']
         tok = rb
         return rb
 
