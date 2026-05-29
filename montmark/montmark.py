@@ -401,6 +401,9 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 p_ending = True
                 broken = True
                 i = i0
+            elif md[ii] == '>':
+                broken = True
+                i = i0
             elif md[i] == '<' and (typ := check_html_block(md, i, stop)):
                 if typ[0] < 7:
                     broken = True
@@ -460,11 +463,12 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 node_cursor += 1
                 if md[i+1] == ' ':
                     i += 1
-            elif node_cursor == len(stack) - 2 and md[ii] not in '\n':
+            elif node_cursor <= len(stack) - 2 and md[ii] not in '\n' and w < 4:
                 node_cursor += 1
                 i -= 1
             else:
                 broken = True
+                i = i0
         elif node == 'fenced':
             if w < 4 and params[0] == seq and params[1] <= w2 and not md[i:stop].lstrip(' '):
                 broken = True
@@ -994,12 +998,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 idx += 1
             elif can_open and 'em' not in wrong.get(i, []):
                 tok = open_element(md, tok, i, stack, 1, 'em', current_run)
-#            elif can_open and 'em' not in wrong.get(i, []):
-#                if (e - i) % 2 == 1:
-#                    tok = open_element(md, tok, i, stack, 1, 'em', current_run)
-#                else:
-#                    tok = open_element(md, tok, i+1, stack, 2, 'strong', current_run)
-#                    idx += 1
         elif md[i-2:i+1] == '```' and stack[-1][0] == 'code' and stack[-1][3] == 3:
             stl = True
             tok = close_element(md, tok, i, stack, 3)
