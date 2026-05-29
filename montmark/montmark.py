@@ -439,7 +439,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 node_cursor += 1
                 i = forward_cursor(md, i0, offset)
                 if DEBUG:
-                    dprint(f'forward to {i}')
+                    dprint(f'forward to {i} from {i0} for offset {offset}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
                 node_cursor -= 1
                 broken = True
@@ -461,8 +461,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
-                if md[i+1] == ' ':
-                    i += 1
+                #if md[i+1] == ' ':
+                #    i += 1
             elif node_cursor <= len(stack) - 2 and md[ii] not in '\n' and w < 4:
                 node_cursor += 1
                 i -= 1
@@ -627,6 +627,9 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             add_spaces = w - 4
             if stack[-1][0] == 'li':
                 stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                ol_off, ol_x, ol_y = stack[-2][3]
+                if stack[-1][3] == 1:
+                    stack[-2][3] = (ol_off-4, ol_x, ol_y)
             stack.append(['indented', [], i, add_spaces])
             return ii
         elif seq  == '#' and md[i] in ' \t\n' and w < 4 and w2 <= 6:
@@ -648,7 +651,9 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(['ul', [], i, (offset+ix-i0, None, md[i])])
+                oo = offset+ix-i0
+                oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
+                stack.append(['ul', [], i, (oo, None, md[i])])
             stack.append(['li', [], i, 0])
             i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t' and int(md[i0:i]) < 1000000000:
@@ -658,7 +663,9 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 else:
                     offset = 0
                 _, ix, _, _ = indentation(md, i+1)
-                stack.append(['ol', [], i, (offset+ix-i0, int(md[i0:i]), md[i])])
+                oo = offset+ix-i0
+                oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
+                stack.append(['ol', [], i, (oo, int(md[i0:i]), md[i])])
             stack.append(['li', [], i, 0])
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
