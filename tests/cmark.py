@@ -44,7 +44,7 @@ def make_conclusion(cases: list):
     O = sys.stdout
     E = sys.stderr
     COL1 = 40
-    COL = 10
+    COL = 6
     sections = {}
     order_appearance = []
     total_ok = 0
@@ -54,17 +54,20 @@ def make_conclusion(cases: list):
         section  = case['section']
         passed = case['passed']
         if section not in sections:
-            sections[section] = {OK: 0, KO: 0}
+            sections[section] = {OK: 0, KO: 0, 'bugs':[]}
             order_appearance.append(section)
         sections[section][passed] += 1
-    print(f"\n{'Section':{COL1}} {'OK':>{COL}} {'KO':>{COL}} {'Total':>{COL}} {'% OK':>{COL}}", file=E)
+        if passed == KO:
+            sections[section]['bugs'].append(str(case['example']))
+    print(f"\n{'Section':{COL1}} {'OK':>{COL}} {'KO':>{COL}} {'Total':>{COL}} {'% OK':>{COL}}    Cases", file=E)
     for section in order_appearance:
         nb_ok = sections[section][OK]
         nb_ko = sections[section][KO]
+        bugs = sections[section]['bugs']
         total_ok += nb_ok
         total_ko += nb_ko
         percent = nb_ok*100//(nb_ok+nb_ko)
-        print(f"{section:{COL1}} {nb_ok:{COL}} {nb_ko:{COL}} {nb_ok+nb_ko:{COL}} {percent:{COL-1}}%", file=E)
+        print(f"{section:{COL1}} {nb_ok:{COL}} {nb_ko:{COL}} {nb_ok+nb_ko:{COL}} {percent:{COL-1}}%    {','.join(bugs)}", file=E)
     percent = total_ok*100//(total_ok+total_ko)
     print(f"{'ALL':{COL1}} {total_ok:{COL}} {total_ko:{COL}} {total_ok+total_ko:{COL}} {percent:{COL-1}}%", file=E)
     return

@@ -542,7 +542,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         if stack[-1][0] == 'p_' and p_ending:
             stack[-1][0] = 'p'
             stack[-1][3] = True
-        if stack[-1][0] == 'li' and stack[-1][3] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
+        if stack[-1][0] == 'li' and stack[-1][3][0] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
             stack[-1][1][0] = ''
             stack[-1][1][1] = ''
             stack[-1][1][-2] = ''
@@ -612,7 +612,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             return i
         elif seq in '`~' and w < 4 and w2 >= 3 and (i >= stop or seq == '~' or '`' not in md[i:stop]):
             if stack[-1][0] == 'li':
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
             lang = md[i:stop].lstrip(' ').split(" ", 1)[0]
             stack.append(['fenced', [], i, (seq, w2, lang, w)])
             i = stop
@@ -628,9 +628,9 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 _, ii, sp_or_tabs, w = indentation(md, i0+1, extra)
             add_spaces = w - 4
             if stack[-1][0] == 'li':
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
                 ol_off, ol_x, ol_y = stack[-2][3]
-                if stack[-1][3] == 1:
+                if stack[-1][3][0] == 1:
                     stack[-2][3] = (ol_off-4, ol_x, ol_y)
             stack.append(['indented', [], i, add_spaces])
             return ii
@@ -639,12 +639,12 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             return i+1
         elif md[i] == '>':
             if stack[-1][0] == 'li':
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
             stack.append(['blockquote', [], i, None])
         elif md[i] in '+-*' and i+1<len(md) and (md[i+1] in ' \t' or (md[i+1] in '\n' and stack[-1][0] != 'p')):
             if stack[-1][0] != 'ul':
                 if stack[-1][0] == 'li':
-                    stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+                    stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
                 if len(stack) >= 2 and stack[-2][0] == 'ul':
                     offset = stack[-2][3][0]
                 else:
@@ -654,7 +654,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
                 (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
                 stack.append(['ul', [], i, (oo, None, md[i])])
-            stack.append(['li', [], i, 0])
+            stack.append(['li', [], i, [0, 0]])
             i += 1
         elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and (md[i+1] in ' \t' or (md[i+1] in '\n' and stack[-1][0] != 'p')) and int(md[i0:i]) < 1000000000:
             if stack[-1][0] != 'ol':
@@ -666,7 +666,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 oo = offset+ix-i0
                 oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
                 stack.append(['ol', [], i, (oo, int(md[i0:i]), md[i])])
-            stack.append(['li', [], i, 0])
+            stack.append(['li', [], i, [0, 0]])
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             if DEBUG:
@@ -678,16 +678,15 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             else:
                 stack.append(['html', [md[i0:stop]], i, condition])
             return stop
-        elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote', 'li'):
-            if stack[-1][0] == 'li' and stack[-1][3] == 0:
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
+        elif md[ii] not in '\r\n' and stack[-1][0] in ('li'):
+            if stack[-1][3][0] == 0:
                 stack.append(['p_', [], ii, False])
-            elif stack[-1][0] == 'li' and stack[-1][3] == 1:
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
-                stack.append(['p', [], ii, False])
             else:
-                stack[-1][3] = stack[-1][3] + 1 if stack[-1][3] else 1
                 stack.append(['p', [], ii, False])
+            stack[-2][3][0] = stack[-2][3][0] + 1 if stack[-2][3][0] else 1
+            return ii
+        elif md[ii] not in '\r\n' and stack[-1][0] in ('root', 'blockquote'):
+            stack.append(['p', [], ii, False])
             return ii
         else:
             return ii
