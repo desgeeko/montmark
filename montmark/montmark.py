@@ -425,7 +425,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 #i -= 1
                 i = i0 - 1
         elif node == 'li':
-            offset, _, _ = stack[node_cursor-1][3]
+            offset, _, _, loose = stack[node_cursor-1][3]
             if DEBUG:
                 dprint(f'li with offset {offset} ii={ii} w={w} {stack}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] in '.)'):
@@ -442,6 +442,10 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 if DEBUG:
                     dprint(f'forward to {i} from {i0} for offset {offset}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
+                if loose and loose < stack[node_cursor][2]:
+                    stack[node_cursor-1][3][3] = True
+                else:
+                    stack[node_cursor-1][3][3] = False
                 node_cursor -= 1
                 broken = True
                 i = i0
@@ -449,7 +453,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 node_cursor += 1
                 i -= 1
         elif node in ['ul', 'ol']:
-            offset, _, marker = stack[node_cursor][3]
+            offset, _, marker, _ = stack[node_cursor][3]
             _, _, _, w = indentation(md, start)
             if seq == '#':
                 i = ii
@@ -458,6 +462,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = ii
                 broken = True
             else:
+                if md[i] == '\n' and not stack[node_cursor][3][3]:
+                    stack[node_cursor][3][3] = i
                 node_cursor += 1
                 i = i0 - 1
         elif node == 'blockquote':
@@ -627,9 +633,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             add_spaces = w - 4
             if stack[-1][0] == 'li':
                 stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
-                ol_off, ol_x, ol_y = stack[-2][3]
                 if stack[-1][3][0] == 1:
-                    stack[-2][3] = (ol_off-4, ol_x, ol_y)
+                    stack[-2][3][0] = stack[-2][3][0] - 4
             stack.append(['indented', [], i, add_spaces])
             return ii
         elif seq  == '#' and md[i] in ' \t\n' and w < 4 and w2 <= 6:
@@ -652,7 +657,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
             (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
             if stack[-1][0] != 'ul':
-                stack.append(['ul', [], i, [oo, None, md[i]]])
+                stack.append(['ul', [], i, [oo, None, md[i], False]])
             else:
                 stack[-1][3][0] = oo
             stack.append(['li', [], i, [0]])
@@ -670,7 +675,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
             (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
             if stack[-1][0] != 'ol':
-                stack.append(['ol', [], i, [oo, int(md[i0:i]), md[i]]])
+                stack.append(['ol', [], i, [oo, int(md[i0:i]), md[i], False]])
             else:
                 stack[-1][3][0] = oo
             stack.append(['li', [], i, [0]])
@@ -1181,7 +1186,6 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             skip = False
 
         idx += 1
-
     last_elt = stack[-1][0]
     last_content = stack[-1][1]
 
