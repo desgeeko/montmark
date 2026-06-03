@@ -277,6 +277,7 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content, params, last):
     """Prepare html segments but keep them in a list for future join."""
+    dprint(f'DDDD ELEMENT {element} LAST @{last}@')
     if element == 'span' or element == 'p_' or element == 'link_id':
         element = ''
     elif element in ['fenced', 'indented']:
@@ -291,7 +292,7 @@ def html_text(element: str, content, params, last):
         if content:
             content.append('\n')
         content.insert(0, f'<pre><code{lg}>')
-        if last != '\n':
+        if last != '\n' and type(last) != list:
             content.insert(0, '\n')
         content.append(f'</code></pre>')
         content.append('\n')
@@ -330,6 +331,7 @@ def html_text(element: str, content, params, last):
         content.append(f'</{element}>')
         if element[0] in ['u', 'p', 'b']:
             content.append('\n')
+    dprint(f'DDDD CONTENT {content}')
     return content
 
 
@@ -543,14 +545,14 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
     nb_exited = len(stack) - node_cursor
 
     for _ in range(nb_exited):
-        if stack[-1][0] == 'p_' and p_ending:
-            stack[-1][0] = 'p'
-            stack[-1][3] = True
-        if stack[-1][0] == 'li' and stack[-1][3][0] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
-            stack[-1][1][0] = ''
-            stack[-1][1][1] = ''
-            stack[-1][1][-2] = ''
-            stack[-1][1][-1] = ''
+#        if stack[-1][0] == 'p_' and p_ending:
+#            stack[-1][0] = 'p'
+#            stack[-1][3] = True
+#        if stack[-1][0] == 'li' and stack[-1][3][0] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
+#            stack[-1][1][0] = ''
+#            stack[-1][1][1] = ''
+#            stack[-1][1][-2] = ''
+#            stack[-1][1][-1] = ''
         if stack[-1][0] == 'p':
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
@@ -564,6 +566,17 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             return rb
         elif element in ['title']:
             stack[-2][1] = [{}]
+        elif element in ['p_']:
+            stack[-1][1].append([element, fragments, rb, params])
+        elif element in ['ol', 'ul']:
+            for j, x in enumerate(fragments):
+                if type(x) == list:
+                    if params[3]:
+                        x[0] = 'p'
+                    fragments[j:j+1] = html_text(x[0], x[1], x[3], fragments[j-1])
+            current = stack[-1][1]
+            last = current[-1] if current else ''
+            current += html_text(element, fragments, params, last)
         elif element in ['url']:
             stack[-2][1][0]['url'] = quote(fragments[0].replace('\\', ''), safe=SAFE)
         elif element in ['link-def']:
@@ -691,7 +704,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 stack.append(['html', [md[i0:stop]], i, condition])
             return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('li'):
-            if stack[-1][3][0] == 0:
+            if stack[-1][3][0] >= 0:
                 stack.append(['p_', [], ii, False])
             else:
                 stack.append(['p', [], ii, False])
@@ -1321,7 +1334,7 @@ def transform(md: str, start: int = 0) -> str:
     
     for j in range(len(all_fragments)-1, -1, -1):
         x = all_fragments[j]
-        if type(x) == list:
+        if type(x) == list and x[0] != 'p_':
             obj = x[1][0]
             if 'link_id' in obj:
                 link_id = obj['link_id']
