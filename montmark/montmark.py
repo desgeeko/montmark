@@ -527,12 +527,13 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                     node_cursor += 1
                     i = i0-1
         elif node == 'indented':
-            if  w<4 and md[i] != '\n':
+            if w<4 and md[i] != '\n':
                 broken = True
+            elif w >= 4:
+                node_cursor += 1
+                i = forward_cursor(md, i0, min(w, 4))
             else:
                 node_cursor += 1
-                i = i0 + 4 - 1
-#               i = ii - 1
         if broken:
             break
         elif node_cursor >= len(stack):
@@ -544,14 +545,6 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
     nb_exited = len(stack) - node_cursor
 
     for _ in range(nb_exited):
-#        if stack[-1][0] == 'p_' and p_ending:
-#            stack[-1][0] = 'p'
-#            stack[-1][3] = True
-#        if stack[-1][0] == 'li' and stack[-1][3][0] == 1 and len(stack[-1][1]) > 1 and stack[-1][1][1] == '<p>':
-#            stack[-1][1][0] = ''
-#            stack[-1][1][1] = ''
-#            stack[-1][1][-2] = ''
-#            stack[-1][1][-1] = ''
         if stack[-1][0] == 'p':
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
