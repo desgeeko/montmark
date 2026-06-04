@@ -277,7 +277,6 @@ def prefix(md: str, start: int = 0) -> tuple:
 
 def html_text(element: str, content, params, last):
     """Prepare html segments but keep them in a list for future join."""
-    dprint(f'DDDD ELEMENT {element} LAST @{last}@')
     if element == 'span' or element == 'p_' or element == 'link_id':
         element = ''
     elif element in ['fenced', 'indented']:
@@ -331,7 +330,6 @@ def html_text(element: str, content, params, last):
         content.append(f'</{element}>')
         if element[0] in ['u', 'p', 'b']:
             content.append('\n')
-    dprint(f'DDDD CONTENT {content}')
     return content
 
 
@@ -534,6 +532,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             else:
                 node_cursor += 1
                 i = i0 + 4 - 1
+#               i = ii - 1
         if broken:
             break
         elif node_cursor >= len(stack):
