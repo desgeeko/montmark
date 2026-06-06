@@ -313,6 +313,17 @@ def html_text(element: str, content, params, last):
         if last != '\n':
             content.insert(0, '\n')
         content.append(f'\n</{element}>')
+    elif element in ['ul', 'p']:
+        content.insert(0, f'<{element}>')
+        if last != '\n' and type(last) != list and element[0] in ['p']:
+            content.insert(0, '\n')
+        elif last != '\n' and element[0] in ['u']:
+            content.insert(0, '\n')
+        if content[-1] != '\n' and element[0] in ['b', 'u']:
+            content.append('\n')
+        content.append(f'</{element}>')
+        if element[0] in ['u', 'p', 'b']:
+            content.append('\n')
     elif element in ['hr']:
         content.insert(0, f'<{element} />')
         if last != '\n':
@@ -416,36 +427,31 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             elif md[i] in '-.' and md[i+1] in ' \t':
                 broken = True
                 if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
-                    #i = start + stack[-3][3][0]
                     i = ii
                 else:
                     i = i0
             else:
                 node_cursor += 1
-                #i -= 1
                 i = i0 - 1
         elif node == 'li':
             offset, _, _, loose = stack[node_cursor-1][3]
             if DEBUG:
-                dprint(f'li with offset {offset} ii={ii} w={w} {stack}', node_cursor)
+                dprint(f'inside li with offset {offset} i0={i0} ii={ii} w={w} loose={loose}', node_cursor)
             if md[i] in '+-*' or (seq == 'digits' and md[i] in '.)'):
-                _, _, _, w = indentation(md, start)
+                if DEBUG:
+                    dprint(f'new marker offset {offset} i0={i0} ii={ii} w={w} prev=@{md[i0-1]}@', node_cursor)
                 if w < offset:
                     broken = True
                     i = ii
                 else:
                     node_cursor += 1
-                    i -= 1
+                    i = forward_cursor(md, i0, offset)
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
                 i = forward_cursor(md, i0, offset)
                 if DEBUG:
                     dprint(f'forward to {i} from {i0} for offset {offset}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
-                if loose and loose < stack[node_cursor][2]:
-                    stack[node_cursor-1][3][3] = True
-                else:
-                    stack[node_cursor-1][3][3] = False
                 node_cursor -= 1
                 broken = True
                 i = i0
@@ -464,6 +470,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             else:
                 if md[i] == '\n' and not stack[node_cursor][3][3]:
                     stack[node_cursor][3][3] = i
+                    if DEBUG:
+                        dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
                 node_cursor += 1
                 i = i0 - 1
         elif node == 'blockquote':
@@ -563,7 +571,9 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif element in ['ol', 'ul']:
             for j, x in enumerate(fragments):
                 if type(x) == list:
-                    if params[3]:
+                    if DEBUG:
+                        dprint(f'###### Loose list param = {params[3]} i={i}')
+                    if params[3] == True or (type(params[3]) == int and params[3] < i-1):
                         x[0] = 'p'
                     fragments[j:j+1] = html_text(x[0], x[1], x[3], fragments[j-1])
             current = stack[-1][1]
@@ -658,8 +668,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                     offset = stack[-2][3][0]
             elif stack[-1][0] == 'ul':
                     offset = stack[-1][3][0]
-            oo = offset+ix-i0
-            oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
+            oo = ix-i0
+            oo = w2+2+4 if oo > w2+2+4 else oo
             (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
             if stack[-1][0] != 'ul':
                 stack.append(['ul', [], i, [oo, None, md[i], False]])
@@ -676,8 +686,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                     offset = stack[-2][3][0]
             elif stack[-1][0] == 'ol':
                     offset = stack[-1][3][0]
-            oo = offset+ix-i0
-            oo = offset+w2+2+4 if oo > offset+w2+2+4 else oo
+            oo = ix-i0
+            oo = w2+2+4 if oo > w2+2+4 else oo
             (oo, blank_first) = (2, True) if md[i+1] == '\n' or md[ix] == '\n' else (oo, False)
             if stack[-1][0] != 'ol':
                 stack.append(['ol', [], i, [oo, int(md[i0:i]), md[i], False]])
@@ -696,9 +706,12 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 stack.append(['html', [md[i0:stop]], i, condition])
             return stop
         elif md[ii] not in '\r\n' and stack[-1][0] in ('li'):
-            if stack[-1][3][0] >= 0:
+            if stack[-1][3][0] == 0:
                 stack.append(['p_', [], ii, False])
             else:
+                stack[-2][3][3] = True
+                if DEBUG:
+                    dprint(f'###### New paragraph in list: tagging loose list at True')
                 stack.append(['p', [], ii, False])
             stack[-2][3][0] = stack[-2][3][0] + 1 if stack[-2][3][0] else 1
             return ii
