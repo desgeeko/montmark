@@ -461,7 +461,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = i0
             else:
                 node_cursor += 1
-                i -= 1
+                i = i0 - 1
         elif node in ['ul', 'ol']:
             offset, _, marker, _ = stack[node_cursor][3]
             _, _, _, w = indentation(md, start)
@@ -475,9 +475,11 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = ii
                 broken = True
             elif md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
-                stack[node_cursor][3][3] = i
-                if DEBUG:
-                    dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
+                nested_lists = [stack[l][1] for l in range(node_cursor+1, len(stack)) if stack[l][0] in ('ul', 'ol')]
+                if stack[-1][0] != 'fenced' and not nested_lists:
+                    stack[node_cursor][3][3] = i
+                    if DEBUG:
+                        dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
                 node_cursor += 1
                 i = i0 - 1
             else:
@@ -486,6 +488,9 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif node == 'blockquote':
             if md[i] == '>':
                 node_cursor += 1
+            elif seq == '`' and w2 >= 3:
+                broken = True
+                i = i0
             elif node_cursor <= len(stack) - 2 and md[ii] not in '\n' and w < 4:
                 node_cursor += 1
                 i -= 1
@@ -582,7 +587,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             for j, x in enumerate(fragments):
                 if type(x) == list:
                     if DEBUG:
-                        dprint(f'###### Loose list param = {params[3]} start={start}')
+                        dprint(f'###### Loose list at {rb} param = {params[3]} start={start}')
                     if params[3] == True or (type(params[3]) == int and params[3] < start-1) and not loose_found:
                         x[0] = 'p'
                     fragments[j:j+1] = html_text(x[0], x[1], x[3], fragments[j-1])
