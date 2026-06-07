@@ -457,7 +457,6 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 broken = True
                 i = i0
             elif not stack[-1][1] and md[ii] in '\r\n':
-                node_cursor -= 1
                 broken = True
                 i = i0
             else:
@@ -472,11 +471,16 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             elif (md[ii] in '-+*' or (seq == 'digits' and md[ii+w2] in '.)')) and md[ii+w2] != marker and w < offset:
                 i = ii
                 broken = True
+            elif not (md[ii] in '-+*' or (seq == 'digits' and md[ii+w2] in '.)')) and node_cursor == len(stack)-1 and md[ii] not in '\r\n':
+                i = ii
+                broken = True
+            elif md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
+                stack[node_cursor][3][3] = i
+                if DEBUG:
+                    dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
+                node_cursor += 1
+                i = i0 - 1
             else:
-                if md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
-                    stack[node_cursor][3][3] = i
-                    if DEBUG:
-                        dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
                 node_cursor += 1
                 i = i0 - 1
         elif node == 'blockquote':
