@@ -381,6 +381,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elt = 'h1' if setext == '=' else 'h2'
         if stack[-1][1][-1] == '<br />':
             stack[-1][1].pop()
+        if md[start-2] == '\\': # TODO with rollback
+            stack[-1][1].append('\\')
         content = stack[-1][1] if stack[-1][1][-1] not in '\t' else stack[-1][1][:-1]
         cp = stack[-1][2]
         if stack[-1][0] == 'span':
@@ -754,7 +756,10 @@ def close_element(md, tok, i, stack, offset, links = {}):
     b, e = tok, i
     if stack[-1][0] == 'code' and i-tok>2 and md[tok] == ' ' and md[i-offset] == ' ':
         b, e = tok+1, i-1
-    stack[-1][1].append(md[b:e-offset+1])
+        ins = md[b:e-offset+1] if e-offset+1 > b else ' '
+    else:
+        ins = md[b:e-offset+1]
+    stack[-1][1].append(ins)
     closed = stack.pop()
     current = stack[-1][1]
     if closed[0] == 'square': #TODO fix
