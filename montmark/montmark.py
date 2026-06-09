@@ -352,11 +352,13 @@ def forward_cursor(md, start, offset):
     while i < start + offset:
         if md[i] == ' ':
             nb += 1
+            i += 1
         elif md[i] == '\t':
             nb += 4
+            i += 1
         if nb >= offset:
             break
-        i += 1
+#        i += 1
     return i
 
 
@@ -425,7 +427,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 else:
                     node_cursor += 1
                     i -= 1
-            elif md[i] in '-.)' and md[i+1] in ' \t' and not (stack[-1][0] == 'p' and md[start:i].isdigit() and int(md[start:i]) != 1):
+            elif md[i] in '-.*)' and md[i+1] in ' \t' and not (stack[-1][0] == 'p' and md[start:i].isdigit() and int(md[start:i]) != 1):
                 broken = True
                 if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
                     i = ii
@@ -446,10 +448,12 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                     i = i0
                 else:
                     node_cursor += 1
-                    i = i0 - 1
+#                    i = i0 - 1
+                    i = i0 + offset - 1
+#                    i = forward_cursor(md, i0, offset)
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
-                i = forward_cursor(md, i0, offset)
+                i = forward_cursor(md, i0, offset) - 1
                 if DEBUG:
                     dprint(f'forward to {i} from {i0} for offset {offset}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
@@ -475,8 +479,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = ii
                 broken = True
             elif md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
-                nested_lists = [stack[l][1] for l in range(node_cursor+1, len(stack)) if stack[l][0] in ('ul', 'ol')]
-                if stack[-1][0] != 'fenced' and not nested_lists:
+                if stack[-1][0] != 'fenced':
                     stack[node_cursor][3][3] = i
                     if DEBUG:
                         dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
@@ -553,7 +556,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 broken = True
             elif w >= 4:
                 node_cursor += 1
-                i = forward_cursor(md, i0, min(w, 4))
+                i = forward_cursor(md, i0, min(w, 4)) - 1
             else:
                 node_cursor += 1
         if broken:
@@ -587,10 +590,13 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             for j, x in enumerate(fragments):
                 if type(x) == list:
                     if DEBUG:
-                        dprint(f'###### Loose list at {rb} param = {params[3]} start={start}')
+                        dprint(f'###### Loose list at {rb} param = {params[3]} start={start} x={x}')
                     if params[3] == True or (type(params[3]) == int and params[3] < start-1) and not loose_found:
                         x[0] = 'p'
-                    fragments[j:j+1] = html_text(x[0], x[1], x[3], fragments[j-1])
+                    ins_p = html_text(x[0], x[1], x[3], fragments[j-1])
+                    if fragments[j+1] == '\n' and ins_p[-1] == '\n':
+                        del fragments[j+1]
+                    fragments[j:j+1] = ins_p
             current = stack[-1][1]
             last = current[-1] if current else ''
             current += html_text(element, fragments, params, last)
