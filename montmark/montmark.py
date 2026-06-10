@@ -429,7 +429,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 else:
                     node_cursor += 1
                     i -= 1
-            elif md[i] in '-.*)' and md[i+1] in ' \t' and not (stack[-1][0] == 'p' and md[start:i].isdigit() and int(md[start:i]) != 1):
+            elif (md[i] in '-.*)' and md[i+1] in ' \t'
+                  and not (stack[-1][0] == 'p' and md[start:i].isdigit() and int(md[start:i]) != 1)):
                 broken = True
                 if len(stack) > 2 and stack[-3][0] in ['ul', 'ol']:
                     i = ii
@@ -477,7 +478,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             elif (md[ii] in '-+*' or (seq == 'digits' and md[ii+w2] in '.)')) and md[ii+w2] != marker and w < offset:
                 i = ii
                 broken = True
-            elif not (md[ii] in '-+*' or (seq == 'digits' and md[ii+w2] in '.)')) and node_cursor == len(stack)-1 and md[ii] not in '\r\n':
+            elif (not (md[ii] in '-+*' or (seq == 'digits' and md[ii+w2] in '.)'))
+                  and node_cursor == len(stack)-1 and md[ii] not in '\r\n'):
                 i = ii
                 broken = True
             elif md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
@@ -577,7 +579,8 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             if stack[-1][1][-1] == '<br />':
                 stack[-1][1][-1] = ''
         element, fragments, rb, params = stack.pop()
-        if element in ['em', 'strong', 'code', 'span', 'square', 'square2'] or (element == 'link' and stack[-1][0] in['a', 'img']):
+        if (element in ['em', 'strong', 'code', 'span', 'square', 'square2']
+            or (element == 'link' and stack[-1][0] in['a', 'img'])):
             if DEBUG:
                 dprint(f'{element} should be rolled back to rb={rb} params={params}')
             if element in ['square', 'square2', 'link']:
@@ -698,7 +701,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             dprint(f'oo={oo}')
             stack.append(['li', [], i, [0, oo]])
             i += 1
-        elif seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t\n' and stack[-1][0][0] != 'p' and int(md[i0:i]) < 1000000000:
+        elif (seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t\n'
+              and stack[-1][0][0] != 'p' and int(md[i0:i]) < 1000000000):
             if stack[-1][0] == 'li':
                 stack[-1][3][0] = stack[-1][3][0] + 1 if stack[-1][3][0] else 1
             _, ix, _, _ = indentation(md, i+1)
@@ -1022,7 +1026,8 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 tok = i+1
             idx += 1
             continue
-        if md[i] == ']' and stack[-1][0] in ['em', 'strong'] and stack[-2][0] in ['link-id', 'square', 'square2'] and stack[-2][3] == 1:
+        if (md[i] == ']' and stack[-1][0] in ['em', 'strong']
+            and stack[-2][0] in ['link-id', 'square', 'square2'] and stack[-2][3] == 1):
             rb = stack[-1][2]
             stack.pop()
             if rb in markers:
@@ -1040,9 +1045,11 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                 c, b, e, can_open, can_close = current_run
             if DEBUG:
                 dprint(f'        Del RUN {c} {b} {e} {can_open} {can_close}')
-            if can_close and stack[-1][0] in ['em'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run and ((e-b) != 2 or not can_open) and i+1 != stack[-1][3][2]:
+            if (can_close and stack[-1][0] in ['em'] and stack[-1][3][0] == md[i]
+                and stack[-1][3] != current_run and ((e-b) != 2 or not can_open) and i+1 != stack[-1][3][2]):
                 tok = close_element(md, tok, i, stack, 1)
-            elif can_close and stack[-1][0] in ['strong'] and stack[-1][3][0] == md[i] and stack[-1][3] != current_run and ((e-b) != 1 or not can_open):
+            elif (can_close and stack[-1][0] in ['strong'] and stack[-1][3][0] == md[i]
+                  and stack[-1][3] != current_run and ((e-b) != 1 or not can_open)):
                 if (e - i) < 2:
                     pass
                 else:
@@ -1065,13 +1072,16 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
         elif md[i:i+1] == '`' and md[i-1] != md[i] and md[i+1] != md[i] and stack[-1][0] == 'code' and stack[-1][3] == 1:
             stl = True
             tok = close_element(md, tok, i, stack, 1)
-        elif i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code' and i-2 in markers and 'code' not in wrong.get(i-2, []):
+        elif (i> 1 and md[i-2:i+1] == '```' and md[i+1] != '`' and stack[-1][0] != 'code'
+              and i-2 in markers and 'code' not in wrong.get(i-2, [])):
             tok = open_element(md, tok, i, stack, 3, 'code', 3)
             stl = False
-        elif i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`' and stack[-1][0] != 'code' and i-1 in markers and 'code' not in wrong.get(i-1, []):
+        elif (i> 0 and md[i-1:i+1] == '``' and md[i+1] != '`' and md[i-2] != '`'
+              and stack[-1][0] != 'code' and i-1 in markers and 'code' not in wrong.get(i-1, [])):
             tok = open_element(md, tok, i, stack, 2, 'code', 2)
             stl = False
-        elif md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i] and stack[-1][0] not in ['code', 'span'] and 'code' not in wrong.get(i, []):
+        elif (md[i:i+1] == '`' and md[i+1] != md[i] and md[i-1] != md[i]
+              and stack[-1][0] not in ['code', 'span'] and 'code' not in wrong.get(i, [])):
 #            if stack[-2][0] in ['a', 'img']:
 #                stack.pop()
 #                _, _, rb, _ = stack.pop()
@@ -1111,7 +1121,8 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
                     dprint(f'span should be rolled back to cp={cp}')
                 wrong[cp] = ['span']
                 return cp
-        elif md[i:i+1] == '<' and stack[-1][0] not in ['code','span'] and (md[i+1].isalpha() or md[i+1] in '/?!') and 'span' not in wrong.get(i, []):
+        elif (md[i:i+1] == '<' and stack[-1][0] not in ['code','span']
+              and (md[i+1].isalpha() or md[i+1] in '/?!') and 'span' not in wrong.get(i, [])):
             tok = open_element(md, tok, i-1, stack, 0, 'span', None)
             stl = False
         elif stack[-1][0] == 'html':
@@ -1150,7 +1161,8 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             else:
                 tok = close_element(md, tok, i, stack, 1)
                 tok = close_element(md, tok, i, stack, 1)
-        elif stl and md[i:i+1] == '(' and stack[-1][0] in ['square'] and stack[-2][0] in ['a'] and md[i-1] == ']' and stack[-1][3] == 1:
+        elif (stl and md[i:i+1] == '(' and stack[-1][0] in ['square']
+              and stack[-2][0] in ['a'] and md[i-1] == ']' and stack[-1][3] == 1):
             stack.pop()
             _, _, rb, _ = stack.pop()
             wrong[rb] = ['a']
@@ -1207,7 +1219,9 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
             tok = open_element(md, tok, i, stack, 1, 'square2', 1)
         elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] == 'link-def':
             tok = open_element(md, tok, i, stack, 1, 'link-id', 1)
-        elif stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square2', 'link-id']  and md.find(']', i, stop) != -1 and 'a' not in wrong.get(i, []) and 'img' not in wrong.get(i, []) and 'square' not in wrong.get(i, []): #TODO refactor eol check
+        elif (stl and md[i:i+1] == '[' and not skip and stack[-1][0] not in ['square2', 'link-id']
+              and md.find(']', i, stop) != -1 and 'a' not in wrong.get(i, [])
+              and 'img' not in wrong.get(i, []) and 'square' not in wrong.get(i, [])): #TODO refactor eol check
             i0 = i
             if i > 0 and md[i-1] == '!':
                 e = 'img'
