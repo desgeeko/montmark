@@ -22,7 +22,7 @@ def print_case(example, markdown, html, section, test, passed):
 
 
 def test_case(example, markdown, html, section):
-    test = montmark.transform(markdown)
+    test = montmark.convert(markdown)
     passed = OK if test == html else KO
     return passed, test
 

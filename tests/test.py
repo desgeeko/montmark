@@ -614,7 +614,7 @@ class TestMarkdown(unittest.TestCase):
 
 def make_test(text, expected):
     def test_func(self):
-        self.assertEqual(montmark.transform(text).strip(), expected.strip(), msg=text)
+        self.assertEqual(montmark.convert(text).strip(), expected.strip(), msg=text)
     return test_func
 
 nb = 1

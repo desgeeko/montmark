@@ -443,7 +443,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
             offset, _, _, loose = stack[node_cursor-1][3]
             if DEBUG:
                 dprint(f'inside li with offset {offset} i0={i0} ii={ii} i={i} w={w} loose={loose}', node_cursor)
-            if md[i] in '+-*' or (seq == 'digits' and md[i] in '.)'):
+            if (md[i] in '+-*' or (seq == 'digits' and md[i] in '.)')) and md[i+1] in ' \t\n':
                 if DEBUG:
                     dprint(f'new marker offset {offset} i0={i0} ii={ii} w={w}', node_cursor)
                 if w < offset and w < 4:
@@ -698,7 +698,6 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
                 stack.append(['ul', [], i, [oo, None, md[i], False]])
             else:
                 stack[-1][3][0] = oo
-            dprint(f'oo={oo}')
             stack.append(['li', [], i, [0, oo]])
             i += 1
         elif (seq == 'digits' and md[i] in '.)' and i+1<len(md) and md[i+1] in ' \t\n'
@@ -718,7 +717,7 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             i += 1
         elif md[ii] == '<' and stack[-1][0] != 'html' and (typ := check_html_block(md, ii, stop)):
             if DEBUG:
-                dprint('html block', typ)
+                dprint(f'html block {typ}')
             condition, ends = typ
             if ends:
                 current = stack[-1][1]
@@ -884,16 +883,16 @@ def check_span(md: str, tok: int, i: int):
 def detect_del_run(md: str, start: int, stop: int):
     """Assert if start of a delimiter run."""
     i = del_b = del_e = start
-    while i < stop:
+    while i < stop-1:
         i += 1
         if md[i] == md[del_b]:
             del_e = i
         else:
             break
     punc_before = md[del_b-1] in PUNCTUATION if del_b > 0 else False
-    punc_after  = md[del_e+1] in PUNCTUATION if del_e < stop else False
+    punc_after  = md[del_e+1] in PUNCTUATION if del_e < stop-1 else False
     ws_before = md[del_b-1] in SP if del_b > 0 else True
-    ws_after  = md[del_e+1] in SP if del_e < stop else True
+    ws_after  = md[del_e+1] in SP if del_e < stop-1 else True
     is_left = not ws_after and (not punc_after or (punc_after and (ws_before or punc_before)))
     is_right = not ws_before and (not punc_before or (punc_before and (ws_after or punc_after)))
     if md[del_b] == '*':
@@ -1284,7 +1283,7 @@ def payload(md: str, start: int, stop: int, stack, links, wrong, offset=0) -> li
     return stop+1
 
 
-def transform(md: str, start: int = 0) -> str:
+def convert(md: str, start: int = 0) -> str:
     """Render HTML from markdown string."""
     res = ''
     i = start
@@ -1400,7 +1399,7 @@ def main():
         f = sys.stdin
     else:
         f = open(args.input, "r", encoding="utf-8")
-    print(transform(f.read()))
+    print(convert(f.read()))
 
 
 if __name__ == "__main__":
