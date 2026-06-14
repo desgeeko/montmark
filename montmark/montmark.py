@@ -592,16 +592,19 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif element in ['p_']:
             stack[-1][1].append([element, fragments, rb, params])
         elif element in ['ol', 'ul']:
-            for j, x in enumerate(fragments):
+            j = len(fragments) - 1
+            while j >= 0:
+                x = fragments[j]
                 if type(x) == list:
                     if DEBUG:
                         dprint(f'###### Loose list at {rb} param = {params[3]} start={start} x={x}')
-                    if params[3] == True or (type(params[3]) == int and params[3] < start-1) and not loose_found:
+                    if x[0] == 'p_' and params[3] == True or (type(params[3]) == int and params[3] < start-1) and not loose_found:
                         x[0] = 'p'
                     ins_p = html_text(x[0], x[1], x[3], fragments[j-1])
                     if fragments[j+1] == '\n' and ins_p[-1] == '\n':
                         del fragments[j+1]
                     fragments[j:j+1] = ins_p
+                j -= 1
             current = stack[-1][1]
             last = current[-1] if current else ''
             current += html_text(element, fragments, params, last)
