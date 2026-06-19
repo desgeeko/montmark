@@ -64,7 +64,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 
 | Section                                       |    OK | Total |  % OK | Discrepancies                                 |
 | --------------------------------------------- | ----- | ----- | ----- | --------------------------------------------- |
-| Tabs                                          |    10 |    11 |   90% | 9                                             |
+| Tabs                                          |    11 |    11 |  100% |                                               |
 | Backslash escapes                             |    13 |    13 |  100% |                                               |
 | Entity and numeric character references       |    17 |    17 |  100% |                                               |
 | Precedence                                    |     1 |     1 |  100% |                                               |
@@ -90,7 +90,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Hard line breaks                              |    14 |    15 |   93% | 644                                           |
 | Soft line breaks                              |     2 |     2 |  100% |                                               |
 | Textual content                               |     3 |     3 |  100% |                                               |
-| ALL                                           |   601 |   652 |   92% |                                               |
+| ALL                                           |   602 |   652 |   92% |                                               |
 
 ## Open-Source, not Open-Contribution yet
 
