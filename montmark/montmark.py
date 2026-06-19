@@ -348,7 +348,7 @@ def html_text(element: str, content, params, last):
 def forward_cursor(md, start, offset):
     """Skip spaces and tabs."""
     i = start
-    nb = 0
+    nb = rem = 0
     while i < start + offset:
         if md[i] == ' ':
             nb += 1
@@ -356,10 +356,11 @@ def forward_cursor(md, start, offset):
         elif md[i] == '\t':
             nb += 4
             i += 1
+        else:
+            i += 1
         if nb >= offset:
             break
-#        i += 1
-    return i
+    return i, nb - offset
 
 
 def context(md: str, start: int, stop: int, stack, links, wrong, close = False) -> int:
@@ -369,6 +370,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
     tok, sp_or_tabs, w = i, False, 0
     node_cursor = 1
     p_ending = False
+    rem = 0
     if len(stack) == 1:
         return i
 
@@ -442,21 +444,20 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
         elif node == 'li':
             offset, _, _, loose = stack[node_cursor-1][3]
             if DEBUG:
-                dprint(f'inside li with offset {offset} i0={i0} ii={ii} i={i} w={w} loose={loose}', node_cursor)
+                dprint(f'inside li with offset {offset} i0={i0} ii={ii} i={i} w={w} loose={loose} rem={rem}', node_cursor)
             if (md[i] in '+-*' or (seq == 'digits' and md[i] in '.)')) and md[i+1] in ' \t\n':
                 if DEBUG:
                     dprint(f'new marker offset {offset} i0={i0} ii={ii} w={w}', node_cursor)
-                if w < offset and w < 4:
+                if w+rem < offset and w < 4:
                     broken = True
                     i = i0
                 else:
                     node_cursor += 1
-#                    i = i0 - 1
-                    i = i0 + offset - 1
-#                    i = forward_cursor(md, i0, offset)
+                    i, rem = forward_cursor(md, i0, offset-rem)
+                    i -= 1
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w>=offset:
                 node_cursor += 1
-                i = forward_cursor(md, i0, offset) - 1
+                i = forward_cursor(md, i0, offset)[0] - 1
                 if DEBUG:
                     dprint(f'forward to {i} from {i0} for offset {offset}')
             elif stack[-1][0][0] != 'p' and md[ii] not in ' \r\n' and w<offset:
@@ -560,7 +561,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 broken = True
             elif w >= 4:
                 node_cursor += 1
-                i = forward_cursor(md, i0, min(w, 4)) - 1
+                i = forward_cursor(md, i0, min(w, 4))[0] - 1
             else:
                 node_cursor += 1
         if broken:
