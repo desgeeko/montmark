@@ -329,6 +329,7 @@ def html_text(element: str, content, params, last):
         content.insert(0, f'<{element} />')
         if last != '\n':
             content.insert(0, '\n')
+        content.append('\n')
     elif element in ['br']:
         content[-1] = f'<{element} />'
     elif element in ['html', 'raw', 'link-def']:
@@ -484,7 +485,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
                 i = ii
                 broken = True
             elif md[i] == '\n' and not seq and not stack[node_cursor][3][3]:
-                if stack[-1][0] != 'fenced':
+                if stack[-1][0] not in ['fenced', 'hr']:
                     stack[node_cursor][3][3] = i
                     if DEBUG:
                         dprint(f'###### Empty line in UL/OL: tagging loose list at index {i}')
@@ -641,13 +642,17 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
     if stack[-1][0] == 'fenced':
         return i
     hr, eol = check_hr(md, i)
-    if hr:
-        stack.append(['hr', [], i, None])
-        return eol
+#    if hr:
+#        stack.append(['hr', [], i, None])
+#        return eol
     if stack[-1][0] in ['html', 'link_id', 'link']:
         return i
 
     while i < stop + 1:
+        hr, eol = check_hr(md, i)
+        if hr:
+            stack.append(['hr', [], i, None])
+            return eol
         node, accu, _, _ = stack[-1]
         i0 = i
         extra = 2 if i0 > 0 and md[i0-1] == '\t' else 0

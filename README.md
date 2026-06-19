@@ -68,7 +68,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Backslash escapes                             |    13 |    13 |  100% |                                               |
 | Entity and numeric character references       |    17 |    17 |  100% |                                               |
 | Precedence                                    |     1 |     1 |  100% |                                               |
-| Thematic breaks                               |    18 |    19 |   94% | 61                                            |
+| Thematic breaks                               |    19 |    19 |  100% |                                               |
 | ATX headings                                  |    18 |    18 |  100% |                                               |
 | Setext headings                               |    26 |    27 |   96% | 91                                            |
 | Indented code blocks                          |    11 |    12 |   91% | 109                                           |
@@ -90,7 +90,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Hard line breaks                              |    14 |    15 |   93% | 644                                           |
 | Soft line breaks                              |     2 |     2 |  100% |                                               |
 | Textual content                               |     3 |     3 |  100% |                                               |
-| ALL                                           |   602 |   652 |   92% |                                               |
+| ALL                                           |   603 |   652 |   92% |                                               |
 
 ## Open-Source, not Open-Contribution yet
 
