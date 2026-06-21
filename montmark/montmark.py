@@ -144,7 +144,7 @@ def check_tag(md: str, start: int, stop: int):
     zone = 'in_tag_name'
     while i < stop:
         if zone == 'in_tag_name':
-            if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' \n:-.=/'):
+            if not (md[i].isalpha() or md[i].isdigit() or md[i] in ' \n:-=/'):
                 return False
             if md[i] in ' \n':
                 zone = 'in_void'

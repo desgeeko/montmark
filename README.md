@@ -73,7 +73,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Setext headings                               |    27 |    27 |   96% |                                               |
 | Indented code blocks                          |    11 |    12 |   91% | 109                                           |
 | Fenced code blocks                            |    29 |    29 |  100% |                                               |
-| HTML blocks                                   |    39 |    44 |   86% | 174,175,187,190,191                           |
+| HTML blocks                                   |    40 |    44 |   90% | 174,175,190,191                               |
 | Link reference definitions                    |    23 |    27 |   85% | 201,208,209,210                               |
 | Paragraphs                                    |     8 |     8 |  100% |                                               |
 | Blank lines                                   |     1 |     1 |  100% |                                               |
@@ -85,12 +85,12 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Emphasis and strong emphasis                  |   126 |   132 |   95% | 412,430,445,461,469,470                       |
 | Links                                         |    79 |    90 |   87% | 520,523,533,541,545,546,556,559,568,569,571   |
 | Images                                        |    17 |    22 |   77% | 574,575,587,590,593                           |
-| Autolinks                                     |    18 |    19 |   94% | 610                                           |
+| Autolinks                                     |    19 |    19 |  100% |                                               |
 | Raw HTML                                      |    16 |    20 |   80% | 616,619,629,632                               |
 | Hard line breaks                              |    14 |    15 |   93% | 644                                           |
 | Soft line breaks                              |     2 |     2 |  100% |                                               |
 | Textual content                               |     3 |     3 |  100% |                                               |
-| ALL                                           |   605 |   652 |   92% |                                               |
+| ALL                                           |   607 |   652 |   93% |                                               |
 
 ## Open-Source, not Open-Contribution yet
 
