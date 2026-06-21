@@ -380,7 +380,7 @@ def context(md: str, start: int, stop: int, stack, links, wrong, close = False) 
 
     if hr:
         close = True
-    if setext and stack[-1][0] in ['p', 'p_', 'span'] and stack[-2][0] not in ['blockquote', 'li']:
+    if setext and stack[-1][0] in ['p', 'p_'] and stack[-2][0] not in ['blockquote', 'li']:
         elt = 'h1' if setext == '=' else 'h2'
         if stack[-1][1][-1] == '<br />':
             stack[-1][1].pop()
