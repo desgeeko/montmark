@@ -731,6 +731,8 @@ def structure(md: str, start: int, stop: int, stack, links) -> list:
             if DEBUG:
                 dprint(f'html block {typ}')
             condition, ends = typ
+            if condition == 7 and stack[-1][0][0] == 'p':
+                return ii
             if ends:
                 current = stack[-1][1]
                 current += md[i0:stop]
