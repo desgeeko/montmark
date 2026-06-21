@@ -70,10 +70,10 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Precedence                                    |     1 |     1 |  100% |                                               |
 | Thematic breaks                               |    19 |    19 |  100% |                                               |
 | ATX headings                                  |    18 |    18 |  100% |                                               |
-| Setext headings                               |    26 |    27 |   96% | 91                                            |
+| Setext headings                               |    27 |    27 |   96% |                                               |
 | Indented code blocks                          |    11 |    12 |   91% | 109                                           |
 | Fenced code blocks                            |    29 |    29 |  100% |                                               |
-| HTML blocks                                   |    38 |    44 |   86% | 148,174,175,187,190,191                       |
+| HTML blocks                                   |    39 |    44 |   86% | 174,175,187,190,191                           |
 | Link reference definitions                    |    23 |    27 |   85% | 201,208,209,210                               |
 | Paragraphs                                    |     8 |     8 |  100% |                                               |
 | Blank lines                                   |     1 |     1 |  100% |                                               |
@@ -90,7 +90,7 @@ the `FILE` argument may be a file path or `-` for standard input (stdin).
 | Hard line breaks                              |    14 |    15 |   93% | 644                                           |
 | Soft line breaks                              |     2 |     2 |  100% |                                               |
 | Textual content                               |     3 |     3 |  100% |                                               |
-| ALL                                           |   603 |   652 |   92% |                                               |
+| ALL                                           |   605 |   652 |   92% |                                               |
 
 ## Open-Source, not Open-Contribution yet
 

@@ -336,6 +336,8 @@ def html_text(element: str, content, params, last):
     elif element in ['html', 'raw', 'link-def']:
         pass
     else:
+        if content and content[0] != '\n' and element[0] in ['b']:
+            content.insert(0, '\n')
         content.insert(0, f'<{element}>')
         if last != '\n' and element[0] in ['b', 'u', 'l', 'p', 'h']:
             content.insert(0, '\n')
