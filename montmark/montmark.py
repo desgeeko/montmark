@@ -229,7 +229,8 @@ def check_html_block(md: str, start, stop):
     elif cond_6:
         condition = 6
     elif cond_7:
-        if check_tag(md, i+1, stop-1):
+        ts = 1 if md[i+1] == '/' else 0
+        if check_tag(md, i+1, stop-1) and md[i+1+ts:stop-1] not in TAGS_CONDITION_1:
             condition = 7
         else:
             return None
